@@ -1,0 +1,4 @@
+__pycache__/
+*.pyc
+arch-docs/dwg/*.dwg
+convert-dwg-to-dxf/output/*.dxf
