@@ -128,7 +128,7 @@ def main():
         zone = zone_of(path)
         floor, prefix = zone.split("-", 1)
         mine = [r for r in rows_by_floor.get(floor, [])
-                if r[0].split("-")[0] == prefix]
+                if M.area_of(r[0], floor) == prefix]
         out = os.path.join(cfg.by_zone_dir, f"Sheet1_{zone}.xlsx")
         write_zone(mine, out)
         name = os.path.basename(out)
