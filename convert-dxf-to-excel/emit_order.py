@@ -19,7 +19,7 @@ import deckreport as R
 import poc_deckorder as M
 from emit_sheet1 import has_sheet1, zone_of
 from deckconfig import cfg
-from deckcheck.models import ORDER_HEADER
+from deckcheck.models import CONSTANT_COLUMNS, ORDER_HEADER
 
 
 def excel_sheet1_counts(path):
@@ -111,6 +111,40 @@ def order_count(count, remainder):
     return count + 1
 
 
+def _num(v):
+    """일람표 값은 문자열이다. 발주서가 숫자로 적는 열은 숫자로 되돌린다."""
+    try:
+        return int(float(str(v).strip()))
+    except (TypeError, ValueError):
+        return None
+
+
+def spec_fields(master, slab):
+    """일람표 master → 제작의뢰서 사양 열 (타입, 높이, 하부피복, 캠버, CODE).
+
+    발주서 54행 전수 검증으로 확정한 규칙:
+      타입   master TYPE 에서 앞 'M' 을 뗀 것. 'M10085' → '10085' (문자열)
+      높이   TG,  하부피복  둘 다 정수로 적는다
+      캠버   master 값. 서포트를 쓰는 타입은 '-' 인데 발주서는 0 으로 적는다
+      CODE   단부재 + 타입 + '-' + 높이. 'MVS' + '10085' + '-' + '110'
+             master TYPE 의 'M' 자리에 단부재 기호가 들어간다 (54/54).
+    """
+    m = master.get(slab) or master.get(slab.upper()) or {}
+    typ = m.get("TYPE") or ""
+    if not typ:
+        return None, None, None, None, None
+    body = typ[1:]                       # 'M10085' → '10085'
+    tg = _num(m.get("TG"))
+    camber = m.get("캠버")
+    return (
+        body or None,
+        tg,
+        _num(m.get("하부피복")),
+        0 if camber in ("-", None) else _num(camber),
+        f"{CONSTANT_COLUMNS['단부재']}{body}-{tg}",
+    )
+
+
 def build(assigned, names, master, prefix, floor=None):
     """배정 결과 → 제작의뢰서 행.
 
@@ -128,13 +162,10 @@ def build(assigned, names, master, prefix, floor=None):
 
     rows = []
     for (zone, slab, length) in sorted(agg):
-        m = master.get(slab) or master.get(slab.upper()) or {}
-        typ = m.get("TYPE") or ""
+        typ, tg, cover, camber, code = spec_fields(master, slab)
         total = agg[(zone, slab, length)]
         rows.append([
-            zone, None, slab, typ[1:] or None, m.get("TG"),
-            m.get("하부피복"), m.get("캠버"), length, total,
-            f"{typ}-{m.get('TG')}" if typ else None,
+            zone, None, slab, typ, tg, cover, camber, length, total, code,
             round(total * length / 1000 * M.DECK_WIDTH_M, 3),
         ])
     return rows

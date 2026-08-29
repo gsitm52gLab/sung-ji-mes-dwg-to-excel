@@ -26,7 +26,7 @@ import deckreport as R
 import poc_deckorder as M
 from deckconfig import cfg
 from emit_order import (SPARSE_DIVIDER_RATIO, norm_slab, order_count,
-                        roll_zone)
+                        roll_zone, spec_fields)
 from emit_sheet1 import zone_of
 from deckcheck.models import EXCEL_HEADER, ORDER_HEADER, PIECE_HEADER
 
@@ -56,24 +56,27 @@ def collect(assigned, names, dcns, floor=None):
 
 
 def order_rows(pieces, master):
-    """부재 → 제작의뢰서 행. (구간, SLAB, 길이) 로 합산한다."""
+    """부재 → 제작의뢰서 행. (구간, SLAB, 길이) 로 합산한다.
+
+    한 행에 부재가 여럿 묶이면 도면NO 도 여럿인데, 발주서는 그중 가장 작은
+    번호를 적는다 (합계가 맞은 행 기준 첫 부재 57% → 최소값 86%).
+    """
     agg = defaultdict(int)
-    dcn = {}
+    dcns = defaultdict(list)
     for p in pieces:
         key = (p["구간"], p["SLAB"], p["길이"])
         agg[key] += p["발주장수"]
-        dcn.setdefault(key, p["도면NO"])
+        if p["도면NO"] is not None:
+            dcns[key].append(p["도면NO"])
+    dcn = {k: min(v) for k, v in dcns.items()}
 
     rows = []
     for (zone, slab, length) in sorted(agg):
-        m = master.get(slab) or {}
-        typ = m.get("TYPE") or ""
+        typ, tg, cover, camber, code = spec_fields(master, slab)
         total = agg[(zone, slab, length)]
         rows.append([
-            zone, dcn[(zone, slab, length)], slab,
-            typ[1:] or None, m.get("TG"), m.get("하부피복"), m.get("캠버"),
-            length, total,
-            f"{typ}-{m.get('TG')}" if typ else None,
+            zone, dcn.get((zone, slab, length)), slab,
+            typ, tg, cover, camber, length, total, code,
             round(total * length / 1000 * M.DECK_WIDTH_M, 3),
         ])
     return rows
