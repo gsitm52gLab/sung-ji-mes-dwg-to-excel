@@ -104,11 +104,16 @@ def write_zone(rows, path):
 
 def main():
     os.makedirs(cfg.by_zone_dir, exist_ok=True)
-    polys, div, labels, pieces, names, dcns = M.extract_shop(cfg.shop_dxf)
-    assigned = M.strat_divider_cells(polys, div, labels, pieces)
-    rows = drawing_rows(assigned, names, dcns)
-    R.console.print(
-        f"도면 부재 {len(pieces)}개 → 배정 {len(rows)}행 / 구간 {len(assigned)}개")
+    # 도면은 층별 평면도가 나란히 놓여 있고 구간 이름이 층 사이에서 겹친다.
+    # 층을 가르지 않으면 지붕 부재가 지하1층 구간으로 합산된다.
+    shop = M.load_shop_cached(cfg.shop_dxf)
+    rows_by_floor = {
+        floor: drawing_rows(M.strat_divider_cells(po, dv, lb, pc), nm, dc)
+        for floor, (po, dv, lb, pc, nm, dc) in shop.items()
+    }
+    R.console.print("도면 층 " + " / ".join(
+        f"{f} 부재 {len(shop[f][3])}개 → 배정 {len(rows_by_floor[f])}행"
+        for f in sorted(shop)))
 
     paths = [p for p in sorted(glob.glob(cfg.excel_glob))
              if not os.path.basename(p).startswith("~$")]
@@ -121,11 +126,19 @@ def main():
     grand = [0, 0, 0]
     for path in paths:
         zone = zone_of(path)
-        prefix = zone.split("-")[-1]
-        mine = [r for r in rows if r[0].split("-")[0] == prefix]
+        floor, prefix = zone.split("-", 1)
+        mine = [r for r in rows_by_floor.get(floor, [])
+                if r[0].split("-")[0] == prefix]
         out = os.path.join(cfg.by_zone_dir, f"Sheet1_{zone}.xlsx")
         write_zone(mine, out)
         name = os.path.basename(out)
+
+        if floor not in rows_by_floor:
+            t.add_row(zone, R.blank(), R.blank(), R.blank(), R.blank(),
+                      name, R.note(f"{floor} 층 없음", style="red"))
+            skipped.append((zone, f"도면에 {floor} 층이 없다 "
+                                 f"— 있는 층: {sorted(rows_by_floor)}"))
+            continue
 
         if not has_sheet1(path):
             t.add_row(zone, R.blank(), str(len(mine)), R.blank(), R.blank(),

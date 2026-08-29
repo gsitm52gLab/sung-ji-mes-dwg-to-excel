@@ -3,3 +3,4 @@ __pycache__/
 arch-docs/dwg/*.dwg
 convert-dwg-to-dxf/output/*.dxf
 convert-dxf-to-excel/output/
+convert-dwg-to-dxf/output/*.cache.pkl
