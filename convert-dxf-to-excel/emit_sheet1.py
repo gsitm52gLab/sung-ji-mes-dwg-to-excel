@@ -106,7 +106,7 @@ def main():
     os.makedirs(cfg.by_zone_dir, exist_ok=True)
     # 도면은 층별 평면도가 나란히 놓여 있고 구간 이름이 층 사이에서 겹친다.
     # 층을 가르지 않으면 지붕 부재가 지하1층 구간으로 합산된다.
-    shop = M.extract_shop_by_floor(cfg.shop_dxf)
+    shop = M.load_shop_cached(cfg.shop_dxf)
     rows_by_floor = {
         floor: drawing_rows(M.strat_divider_cells(po, dv, lb, pc), nm, dc)
         for floor, (po, dv, lb, pc, nm, dc) in shop.items()

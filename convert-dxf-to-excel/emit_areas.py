@@ -149,7 +149,7 @@ def main():
 
     # 층별 평면도가 나란히 놓여 있고 구간 이름이 층 사이에서 겹친다
     # (지하1층 '마-1' 과 지붕 '마-1'). 층을 갈라야 부재가 안 섞인다.
-    shop = M.extract_shop_by_floor(cfg.shop_dxf)
+    shop = M.load_shop_cached(cfg.shop_dxf)
     areas = {}
     density = {}
     for floor, (po, dv, lb, pc, nm, dc) in shop.items():

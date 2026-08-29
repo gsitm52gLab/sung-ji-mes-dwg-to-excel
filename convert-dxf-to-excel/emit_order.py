@@ -153,7 +153,7 @@ def write(rows, path):
 def main():
     os.makedirs(cfg.by_zone_dir, exist_ok=True)
     # 층별 평면도가 나란히 놓여 있고 구간 이름이 겹치므로 층을 갈라 배정한다.
-    shop = M.extract_shop_by_floor(cfg.shop_dxf)
+    shop = M.load_shop_cached(cfg.shop_dxf)
     by_floor = {
         floor: (M.strat_divider_cells(po, dv, lb, pc), nm)
         for floor, (po, dv, lb, pc, nm, dc) in shop.items()

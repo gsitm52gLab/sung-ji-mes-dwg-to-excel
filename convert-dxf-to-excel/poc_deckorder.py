@@ -16,6 +16,7 @@ from __future__ import annotations
 import glob
 import math
 import os
+import pickle
 import re
 import sys
 from collections import defaultdict
@@ -165,6 +166,42 @@ def extract_shop_by_floor(path):
     if bad_pieces:
         print(f"⚠ {PIECE_LAYER} 파싱 실패 {bad_pieces}건", file=sys.stderr)
     return {name: g for name, g in groups.items() if g[3]}
+
+
+def load_shop_cached(path):
+    """extract_shop_by_floor 결과를 dxf 옆 sidecar(.cache.pkl)에 캐싱한다.
+
+    shop dxf 는 100MB 를 넘어 파싱에 20초 가까이 걸린다. emit_areas/order/
+    sheet1 이 저마다 파싱하는 대신, 첫 호출이 캐시를 만들고 이후는 즉시 읽는다.
+    낡음 판정은 dxf 의 (mtime, size) 로 한다.
+
+    캐시는 성능용일 뿐이라, 로드가 어떤 이유로 실패하든(없음·손상·구버전)
+    그냥 다시 파싱한다 — 정답은 언제나 파싱이 낸다. 그래서 넓게 잡는다.
+    """
+    cache_path = path + ".cache.pkl"
+    st = os.stat(path)
+    key = [st.st_mtime, st.st_size]
+    try:
+        with open(cache_path, "rb") as f:
+            blob = pickle.load(f)
+        if blob["key"] == key:
+            return blob["data"]
+    except Exception:
+        pass
+    data = extract_shop_by_floor(path)
+    tmp = f"{cache_path}.{os.getpid()}.tmp"
+    try:
+        with open(tmp, "wb") as f:
+            pickle.dump({"key": key, "data": data}, f)
+        os.replace(tmp, cache_path)   # 원자적 교체 — 중단돼도 반쪽 캐시가 남지 않는다
+    except Exception:
+        # 캐시 저장 실패(권한·디스크)도 무시한다. 데이터는 이미 파싱으로 얻었으니
+        # 캐시가 없을 뿐 결과는 정상이다. 남은 임시 파일만 지운다.
+        try:
+            os.remove(tmp)
+        except OSError:
+            pass
+    return data
 
 
 def extract_shop(path, floor):
