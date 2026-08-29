@@ -51,6 +51,8 @@ class _Config:
         self.areas_dir = resolve("emit", "output", "areas_dir")
         self.by_zone_dir = resolve("emit", "output", "by_zone_dir")
         self.poc_dir = resolve("emit", "output", "poc_dir")
+        # 경로가 아니라 그대로 쓰는 값이라 resolve 를 거치지 않는다.
+        self.order_info = dict((data.get("emit") or {}).get("order_info") or {})
 
     def as_env(self):
         """shell에서 소비할 KEY -> 절대경로 매핑."""

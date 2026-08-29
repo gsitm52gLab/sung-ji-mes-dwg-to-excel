@@ -25,10 +25,11 @@ from openpyxl import Workbook
 import deckreport as R
 import poc_deckorder as M
 from deckconfig import cfg
-from emit_order import (SPARSE_DIVIDER_RATIO, norm_slab, order_count,
+import orderbook
+from emit_order import (SPARSE_DIVIDER_RATIO, decompose, norm_slab, order_count,
                         roll_zone, spec_fields)
 from emit_sheet1 import zone_of
-from deckcheck.models import EXCEL_HEADER, ORDER_HEADER, PIECE_HEADER
+from deckcheck.models import CONSTANT_COLUMNS, EXCEL_HEADER, PIECE_HEADER
 
 # 발주 대상이 아닌 라벨. 단열 구간과 메모성 텍스트는 제작 부재가 아니다.
 SKIP_AREAS = {"지붕", "B1F"}
@@ -44,6 +45,7 @@ def collect(assigned, names, dcns, floor=None):
             continue
         for x, y, length, count, rem in ps:
             areas[area].append({
+                "x": x, "y": y,
                 "구간": rolled,
                 "도면NO": M.nearest((x, y), dcns),
                 "SLAB": norm_slab(M.nearest((x, y), names) or ""),
@@ -61,24 +63,30 @@ def order_rows(pieces, master):
     한 행에 부재가 여럿 묶이면 도면NO 도 여럿인데, 발주서는 그중 가장 작은
     번호를 적는다 (합계가 맞은 행 기준 첫 부재 57% → 최소값 86%).
     """
-    agg = defaultdict(int)
+    grouped = defaultdict(list)
     dcns = defaultdict(list)
     for p in pieces:
         key = (p["구간"], p["SLAB"], p["길이"])
-        agg[key] += p["발주장수"]
+        grouped[key].append((p["장수"], p["잔여"]))
         if p["도면NO"] is not None:
             dcns[key].append(p["도면NO"])
     dcn = {k: min(v) for k, v in dcns.items()}
 
     rows = []
-    for (zone, slab, length) in sorted(agg):
+    for key in sorted(grouped):
+        zone, slab, length = key
         typ, tg, cover, camber, code = spec_fields(master, slab)
-        total = agg[(zone, slab, length)]
-        rows.append([
-            zone, dcn.get((zone, slab, length)), slab,
-            typ, tg, cover, camber, length, total, code,
-            round(total * length / 1000 * M.DECK_WIDTH_M, 3),
-        ])
+        plate, tg1, tg2, tg3 = decompose(grouped[key])
+        total = plate + tg1 + tg2 + tg3
+        rows.append({
+            "구간": zone, "도면NO": dcn.get(key), "SLAB NAME": slab,
+            "강판타입": CONSTANT_COLUMNS["강판타입"],
+            "단부재": CONSTANT_COLUMNS["단부재"],
+            "타입": typ, "높이": tg, "하부피복": cover, "캠버": camber,
+            "길이": length, "강판": plate, "TG1": tg1, "TG2": tg2, "TG-2": 0,
+            "TG3": tg3, "합계": total, "CODE": code,
+            "면적": round((total - plate) * length / 1000 * M.DECK_WIDTH_M, 3),
+        })
     return rows
 
 
@@ -95,15 +103,13 @@ def schedule_rows(pieces, master):
     return rows
 
 
-def write_area(area, pieces, master, path):
+def write_area(area, pieces, master, path, truth=None, source=None):
     wb = Workbook()
 
-    ws = wb.active
-    ws.title = "제작의뢰서"
-    ws.append(list(ORDER_HEADER))
     orders = order_rows(pieces, master)
-    for r in orders:
-        ws.append(r)
+    orderbook.write_order_sheet(wb.active, orders, cfg.order_info)
+    orderbook.write_recheck_sheet(wb.create_sheet("recheck"), orders, pieces,
+                                  truth, source)
 
     s1 = wb.create_sheet("Sheet1")
     s1.append(list(PIECE_HEADER))
@@ -158,6 +164,7 @@ def main():
         # (지붕 전체)에서는 이 값이 결과를 믿을 수 있는지 판단할 유일한 단서다.
         density[floor] = M.divider_density(dv, lb, floor)
 
+    have = existing_orders()
     oracle = M.load_oracle(cfg.excel_glob)
     truth = defaultdict(dict)
     for r in oracle:
@@ -166,7 +173,6 @@ def main():
             truth[(key[0], M.area_of(r["구간"]))][
                 (r["구간"], r["SLAB"], r["길이"])] = r["합계"] - r["강판"]
 
-    have = existing_orders()
     R.console.print(f"도면 층 {len(shop)}개 / 구역 {len(areas)}개 "
                     f"/ 기존 발주서 {len(have)}개")
 
@@ -180,13 +186,17 @@ def main():
         floor, area = key
         ps = areas[key]
         path = os.path.join(cfg.areas_dir, f"{floor}-{area}.xlsx")
-        n_rows = write_area(area, ps, master, path)
+        n_rows = write_area(area, ps, master, path,
+                            truth.get(key),
+                            os.path.basename(have[key]) if key in have else None)
         qty = sum(p["발주장수"] for p in ps)
         zones = len({p["구간"] for p in ps})
 
-        if key in truth:
-            mine = {(r[0], r[2], r[7]): r[8] for r in order_rows(ps, master)}
-            truth_area = truth[key]
+        truth_area = truth.get(key)
+        if truth_area:
+            # 정답 키는 발주서의 `합계 - 강판` 이다. 생성 행도 같게 맞춘다.
+            mine = {(r["구간"], r["SLAB NAME"], r["길이"]): r["합계"] - r["강판"]
+                    for r in order_rows(ps, master)}
             ok = sum(1 for k, v in truth_area.items() if mine.get(k) == v)
             tot += len(truth_area); hit += ok
             verdict = R.ratio(ok, len(truth_area), "행 일치")
@@ -216,7 +226,7 @@ def main():
     R.footnote("분할선 = `@@@구간` 레이어에서 그 구역의 구간을 가르는 선의 수. "
                "구간 수에 비해 적으면 부재가 최근접 라벨로 흩어진다.")
     R.footnote(f"→ {cfg.areas_dir}/"
-               f"  (구역당 파일 1개, 시트 3개: 제작의뢰서 / Sheet1 / 일람표)")
+               f"  (구역당 파일 1개, 시트 4개: 제작의뢰서 / recheck / Sheet1 / 일람표)")
     return 0
 
 

@@ -90,7 +90,8 @@ def roll_zone(zone):
 #
 # 잔여 판정은 AC 셀이 아니라 AG(괄호값)로 한다. 두 값은 보통 AG = AC + 60 이지만
 # 마-6 DS2 행은 AG=6 / AC=546 으로 어긋나 있고, 실제 발주는 AG 쪽과 맞는다.
-EXACT_REMAINDER = 60  # 잔여 0 — 딱 떨어져 강판으로 마감
+EXACT_REMAINDER = 60         # 잔여 0 — 딱 떨어져 강판으로 마감
+EXTRA_DECK_REMAINDER = 560   # 잔여 500 — 정폭 데크를 한 장 더 쓴다
 
 # 구간당 분할선이 이 값보다 적으면 도면에 구간 경계가 사실상 안 그려진 것으로
 # 본다. 그런 구역은 부재가 최근접 라벨로 흩어져 일치율이 떨어지는데, 이는 배정
@@ -123,17 +124,18 @@ def spec_fields(master, slab):
     """일람표 master → 제작의뢰서 사양 열 (타입, 높이, 하부피복, 캠버, CODE).
 
     발주서 54행 전수 검증으로 확정한 규칙:
-      타입   master TYPE 에서 앞 'M' 을 뗀 것. 'M10085' → '10085' (문자열)
+      타입   master TYPE 의 오른쪽 5글자. 'M10085' → '10085' (문자열)
+             발주서 원본 수식이 RIGHT(VLOOKUP(...일람표 TYPE...), 5) 다.
       높이   TG,  하부피복  둘 다 정수로 적는다
       캠버   master 값. 서포트를 쓰는 타입은 '-' 인데 발주서는 0 으로 적는다
       CODE   단부재 + 타입 + '-' + 높이. 'MVS' + '10085' + '-' + '110'
-             master TYPE 의 'M' 자리에 단부재 기호가 들어간다 (54/54).
+             발주서 원본 수식이 CONCATENATE(단부재, 타입, "-", 높이) 다 (54/54).
     """
     m = master.get(slab) or master.get(slab.upper()) or {}
     typ = m.get("TYPE") or ""
     if not typ:
         return None, None, None, None, None
-    body = typ[1:]                       # 'M10085' → '10085'
+    body = typ[-5:]                      # 'M10085' → '10085'
     tg = _num(m.get("TG"))
     camber = m.get("캠버")
     return (
@@ -143,6 +145,37 @@ def spec_fields(master, slab):
         0 if camber in ("-", None) else _num(camber),
         f"{CONSTANT_COLUMNS['단부재']}{body}-{tg}",
     )
+
+
+# 잔여(AG)가 자투리를 어느 열에 적을지도 정한다. 발주서 Sheet1 이 있는 3개
+# 파일 27개 그룹에서 확인한 값이다.
+#   AG == 60          잔여 0.   강판 한 장으로 마감          (강판, 24/27)
+#   AG <  NARROW_MAX  좁은 자투리 → TG1                      (26/27)
+#   AG <  560         중간 자투리 → TG2                      (26/27)
+#   AG >= 560         정폭 데크 한 장 더 → TG3 에 포함
+# 강판은 한 행에 여럿 나와도 발주서에는 1 로만 적힌다 (54행 전수에서 값이 1).
+# NARROW_MAX 의 참값은 AG 260(TG1 최대)과 314(TG2 최소) 사이 어딘가인데
+# 그 구간의 실측이 없어 중간값 300 을 쓴다.
+NARROW_MAX = 300
+
+
+def decompose(pieces):
+    """부재 (장수 AF, 잔여 AG) 목록 → (강판, TG1, TG2, TG3).
+
+    합계 = 강판 + TG1 + TG2 + TG-2 + TG3 이고 TG-2 는 항상 0 이다.
+    """
+    plate = tg1 = tg2 = tg3 = 0
+    for count, remainder in pieces:
+        tg3 += count + (1 if remainder >= EXTRA_DECK_REMAINDER else 0)
+        if remainder == EXACT_REMAINDER:
+            plate += 1
+        elif remainder >= EXTRA_DECK_REMAINDER:
+            pass
+        elif remainder < NARROW_MAX:
+            tg1 += 1
+        else:
+            tg2 += 1
+    return min(plate, 1), tg1, tg2, tg3
 
 
 def build(assigned, names, master, prefix, floor=None):
