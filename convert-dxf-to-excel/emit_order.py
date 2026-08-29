@@ -111,7 +111,7 @@ def order_count(count, remainder):
     return count + 1
 
 
-def build(assigned, names, master, prefix):
+def build(assigned, names, master, prefix, floor=None):
     """배정 결과 → 제작의뢰서 행.
 
     합산 단위는 (구간, 길이) 가 아니라 (구간, SLAB, 길이) 다. 한 구간의 같은
@@ -120,7 +120,7 @@ def build(assigned, names, master, prefix):
     """
     agg = defaultdict(int)
     for zone, ps in assigned.items():
-        if zone.split("-")[0] != prefix:
+        if M.area_of(zone, floor) != prefix:
             continue
         for x, y, length, count, rem in ps:
             slab = norm_slab(M.nearest((x, y), names) or "")
@@ -159,7 +159,7 @@ def main():
         for floor, (po, dv, lb, pc, nm, dc) in shop.items()
     }
     # 구간 배정의 근거가 도면에 얼마나 있는지 — 낮은 일치율의 원인 구분용
-    density = {floor: M.divider_density(dv, lb)
+    density = {floor: M.divider_density(dv, lb, floor)
                for floor, (po, dv, lb, pc, nm, dc) in shop.items()}
     master = M.load_type_master(cfg.detail_dxf)
     oracle = M.load_oracle(cfg.excel_glob)
@@ -178,7 +178,7 @@ def main():
         if floor not in by_floor:
             raise KeyError(f"도면에 {floor} 층이 없습니다. 있는 층: {sorted(by_floor)}")
         assigned, names = by_floor[floor]
-        rows = build(assigned, names, master, prefix)
+        rows = build(assigned, names, master, prefix, floor)
         out = os.path.join(cfg.by_zone_dir, f"제작의뢰서_{zone}.xlsx")
         write(rows, out)
 

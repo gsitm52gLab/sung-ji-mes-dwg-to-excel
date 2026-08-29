@@ -34,17 +34,12 @@ from deckcheck.models import EXCEL_HEADER, ORDER_HEADER, PIECE_HEADER
 SKIP_AREAS = {"지붕", "B1F"}
 
 
-def area_of(zone):
-    """구간 코드에서 구역을 집는다. '사-1-3' → '사', 'B-4' → 'B'."""
-    return zone.split("-")[0]
-
-
-def collect(assigned, names, dcns):
+def collect(assigned, names, dcns, floor=None):
     """배정 결과를 구역 → 구간 → 부재 로 정리한다."""
     areas = defaultdict(list)
     for zone, ps in assigned.items():
         rolled = roll_zone(zone)
-        area = area_of(rolled)
+        area = M.area_of(rolled, floor)
         if area in SKIP_AREAS or "-" not in rolled:
             continue
         for x, y, length, count, rem in ps:
@@ -154,18 +149,18 @@ def main():
     density = {}
     for floor, (po, dv, lb, pc, nm, dc) in shop.items():
         assigned = M.strat_divider_cells(po, dv, lb, pc)
-        for area, ps in collect(assigned, nm, dc).items():
+        for area, ps in collect(assigned, nm, dc, floor).items():
             areas[(floor, area)] = ps
         # 구간을 가를 근거가 도면에 얼마나 있는지. 대조할 발주서가 없는 구역
         # (지붕 전체)에서는 이 값이 결과를 믿을 수 있는지 판단할 유일한 단서다.
-        density[floor] = M.divider_density(dv, lb)
+        density[floor] = M.divider_density(dv, lb, floor)
 
     oracle = M.load_oracle(cfg.excel_glob)
     truth = defaultdict(dict)
     for r in oracle:
         key = floor_area(r["파일"])
         if key:
-            truth[(key[0], area_of(r["구간"]))][
+            truth[(key[0], M.area_of(r["구간"]))][
                 (r["구간"], r["SLAB"], r["길이"])] = r["합계"] - r["강판"]
 
     have = existing_orders()

@@ -53,6 +53,24 @@ PLAN_TITLE_RE = re.compile(r"(지하\s*(\d+)\s*층|지붕|옥탑|(\d+)\s*층).*?
 # 배정 대상에서 뺀다. 제작의뢰서 행은 항상 'C-1' 형태다.
 SUB_ZONE_RE = re.compile(r"^[^-]+-\d+")
 
+# 같은 물리 구역을 층마다 다르게 적은 경우. 지하1층은 '가' 구역을 '1-1'~'1-3'
+# 으로 적었는데 지붕은 같은 자리를 '가-1'~'가-3' 으로 적었다 (평면도 간격
+# 338,050 만큼 겹쳐 보면 1-2↔가-2 가 3,902, 1-3↔가-3 이 3,426 밖에 안 떨어져
+# 있고 구간 수도 3개로 같다. '1-n' 라벨은 지하1층에만 있다).
+#
+# 구간 이름은 도면 원본대로 두고 구역만 바로잡는다. 도면 라벨에만 적용하며
+# 발주 엑셀에서 읽은 구간에는 쓰지 않는다 — 그쪽은 이미 제 이름을 쓴다.
+AREA_ALIAS = {"B1F": {"1": "가"}}
+
+
+def area_of(zone, floor=None):
+    """구간 코드 → 구역. '사-1-3' → '사', 'B-4' → 'B', 지하1층 '1-2' → '가'.
+
+    floor 를 주면 그 층의 표기 별칭을 적용한다. 안 주면 원문 그대로다.
+    """
+    area = zone.split("-")[0]
+    return AREA_ALIAS.get(floor, {}).get(area, area)
+
 # '3760mm^J10장 (260)'. 잔여값 '(260)' 은 없는 경우가 있어 선택으로 둔다.
 PIECE_RE = re.compile(r"(\d+)\s*mm.*?(\d+)\s*장(?:.*?\((\d+)\))?")
 
@@ -218,7 +236,7 @@ def extract_shop(path, floor):
     return by_floor[floor]
 
 
-def divider_density(dividers, labels):
+def divider_density(dividers, labels, floor=None):
     """구역 → (분할선 수, 구간 수). 구간 배정의 근거가 도면에 얼마나 있는지.
 
     strat_divider_cells 는 `@@@구간` 의 분할선으로 칸을 가른다. 구역에 구간이
@@ -231,14 +249,14 @@ def divider_density(dividers, labels):
     subs = _sub_labels(labels)
     zones = defaultdict(set)
     for l in subs:
-        zones[l[2].split("-")[0]].add(l[2])
+        zones[area_of(l[2], floor)].add(l[2])
     counted = {area: [0, len(names)] for area, names in zones.items()}
 
     for d in dividers:
         mid = ((d[0][0] + d[1][0]) / 2, (d[0][1] + d[1][1]) / 2)
         name = nearest(mid, subs)
         if name:
-            counted[name.split("-")[0]][0] += 1
+            counted[area_of(name, floor)][0] += 1
     return {area: tuple(v) for area, v in counted.items()}
 
 
