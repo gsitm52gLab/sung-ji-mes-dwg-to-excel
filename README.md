@@ -14,6 +14,22 @@ arch-docs/dwg/*.dwg          ①ODAFileConverter          ②emit_areas.py
 
 ---
 
+## 리포지토리에 들어 있는 것 / 없는 것
+
+| | 상태 | 비고 |
+|---|---|---|
+| 코드·`config.yaml` | 들어 있음 | |
+| 기존 발주서 `arch-docs/excel/*.xlsm` | 들어 있음 (6개, 884KB) | 대조용 정답지 |
+| ODA 설치 파일 `*.deb` | 들어 있음 (54MB) | 받아온 직후 바로 Docker 빌드 가능 |
+| **도면 `arch-docs/dwg/*.dwg`** | **없음** (33MB) | `.gitignore` 로 제외 — **따로 받아야 한다** |
+| 변환 결과 `*.dxf` | 없음 (146MB) | ②가 만든다 |
+| 생성 발주서 `convert-dxf-to-excel/output/` | 없음 | ④가 만든다 |
+
+클론한 직후에는 도면이 없어 아무것도 돌릴 수 없다. **SHOP·DETAIL dwg를 먼저
+받아 `arch-docs/dwg/` 에 넣는 것이 ①이다.**
+
+---
+
 ## 준비 (최초 1회만)
 
 ### 1. Docker 이미지 빌드
