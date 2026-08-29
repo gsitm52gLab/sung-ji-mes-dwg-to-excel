@@ -23,17 +23,14 @@ from collections import defaultdict
 
 from openpyxl import Workbook
 
+import deckreport as R
 import poc_deckorder as M
 from deckconfig import cfg
 from emit_order import norm_slab, order_count, roll_zone
-from deckcheck.models import EXCEL_HEADER
+from deckcheck.models import EXCEL_HEADER, ORDER_HEADER, PIECE_HEADER
 
 # 발주 대상이 아닌 라벨. 단열 구간과 메모성 텍스트는 제작 부재가 아니다.
 SKIP_AREAS = {"지붕", "B1F"}
-
-ORDER_HEADER = ["구간", "도면NO", "SLAB NAME", "타입", "높이", "하부피복", "캠버",
-                "길이", "합계", "CODE", "면적"]
-PIECE_HEADER = ["구간", "도면NO", "SLAB NAME", "길이", "장수", "잔여"]
 
 
 def area_of(zone):
@@ -104,13 +101,13 @@ def write_area(area, pieces, master, path):
 
     ws = wb.active
     ws.title = "제작의뢰서"
-    ws.append(ORDER_HEADER)
+    ws.append(list(ORDER_HEADER))
     orders = order_rows(pieces, master)
     for r in orders:
         ws.append(r)
 
     s1 = wb.create_sheet("Sheet1")
-    s1.append(PIECE_HEADER)
+    s1.append(list(PIECE_HEADER))
     for p in sorted(pieces, key=lambda p: (p["구간"], -p["길이"])):
         s1.append([p["구간"], p["도면NO"], p["SLAB"],
                    p["길이"], p["발주장수"], p["잔여"]])
@@ -151,9 +148,10 @@ def main():
             r["합계"] - r["강판"]
 
     have = existing_orders()
-    print(f"도면 구역 {len(areas)}개 / 기존 발주서 {len(have)}개\n")
-    print(f"{'구역':<7s}{'구간':>5s}{'부재':>6s}{'행':>5s}{'장수':>7s}  {'기존 발주서 대조':<16s} 파일")
+    R.console.print(f"도면 구역 {len(areas)}개 / 기존 발주서 {len(have)}개")
 
+    R.heading("구역별 발주 엑셀")
+    t = R.table("구역", "구간", "도면부재", "도면의뢰행", "장수", "대조", "파일")
     tot = hit = 0
     for area in sorted(areas, key=lambda a: -sum(p["발주장수"] for p in areas[a])):
         ps = areas[area]
@@ -164,18 +162,20 @@ def main():
 
         if area in truth:
             mine = {(r[0], r[2], r[7]): r[8] for r in order_rows(ps, master)}
-            t = truth[area]
-            ok = sum(1 for k, v in t.items() if mine.get(k) == v)
-            tot += len(t); hit += ok
-            verdict = f"{ok}/{len(t)} 행 일치"
+            truth_area = truth[area]
+            ok = sum(1 for k, v in truth_area.items() if mine.get(k) == v)
+            tot += len(truth_area); hit += ok
+            verdict = R.ratio(ok, len(truth_area), "행 일치")
         else:
-            verdict = "발주서 없음 — 신규"
+            verdict = R.note("발주서 없음 — 신규", style="cyan")
 
-        print(f"{area:<7s}{zones:>5d}{len(ps):>6d}{n_rows:>5d}{qty:>7d}  "
-              f"{verdict:<16s} {os.path.basename(path)}")
+        t.add_row(area, str(zones), str(len(ps)), str(n_rows), str(qty),
+                  verdict, os.path.basename(path))
+    R.console.print(t)
 
-    print(f"\n기존 발주서가 있는 구역: {hit}/{tot} 행 일치 ({hit/tot*100:.0f}%)")
-    print(f"→ {cfg.areas_dir}/  (구역당 파일 1개, 시트 3개: 제작의뢰서 / Sheet1 / 일람표)")
+    R.summary(f"기존 발주서가 있는 구역: {hit}/{tot} 행 일치 ({hit/tot*100:.0f}%)")
+    R.footnote(f"→ {cfg.areas_dir}/"
+               f"  (구역당 파일 1개, 시트 3개: 제작의뢰서 / Sheet1 / 일람표)")
     return 0
 
 

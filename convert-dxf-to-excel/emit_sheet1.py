@@ -18,10 +18,11 @@ from collections import Counter, defaultdict
 
 from openpyxl import Workbook, load_workbook
 
+import deckreport as R
 import poc_deckorder as M
 from deckconfig import cfg
+from deckcheck.models import PIECE_HEADER
 
-HEADER = ["구간", "도면NO", "SLAB NAME", "길이", "장수", "잔여"]
 ZONE_RE = re.compile(r"(B1F-[^_.]+)")
 
 
@@ -95,7 +96,7 @@ def write_zone(rows, path):
     wb = Workbook()
     ws = wb.active
     ws.title = "Sheet1"
-    ws.append(HEADER)
+    ws.append(list(PIECE_HEADER))
     for r in rows:
         ws.append(r)
     wb.save(path)
@@ -106,12 +107,17 @@ def main():
     polys, div, labels, pieces, names, dcns = M.extract_shop(cfg.shop_dxf)
     assigned = M.strat_divider_cells(polys, div, labels, pieces)
     rows = drawing_rows(assigned, names, dcns)
-    print(f"도면 부재 {len(pieces)}개 → 배정 {len(rows)}행 / 구간 {len(assigned)}개\n")
+    R.console.print(
+        f"도면 부재 {len(pieces)}개 → 배정 {len(rows)}행 / 구간 {len(assigned)}개")
 
     paths = [p for p in sorted(glob.glob(cfg.excel_glob))
              if not os.path.basename(p).startswith("~$")]
 
-    print(f"{'구역':<9s} {'엑셀행':>6s} {'도면행':>6s} {'부재일치':>9s} {'구간일치':>9s}  파일")
+    R.heading("구역별 Sheet1 (부재 단위 명세)")
+    t = R.table("구역", "엑셀부재", "도면부재", "부재일치", "구간일치", "파일", "비고")
+    # 대조에서 빠진 사유는 길어서 표를 밀어낸다. 표에는 짧은 딱지만 두고
+    # 사유 전문은 표 아래에 모아 찍는다.
+    skipped = []
     grand = [0, 0, 0]
     for path in paths:
         zone = zone_of(path)
@@ -119,39 +125,48 @@ def main():
         mine = [r for r in rows if r[0].split("-")[0] == prefix]
         out = os.path.join(cfg.by_zone_dir, f"Sheet1_{zone}.xlsx")
         write_zone(mine, out)
+        name = os.path.basename(out)
 
         if not has_sheet1(path):
-            print(f"{zone:<9s} {'—':>6s} {len(mine):>6d} {'':>9s} {'':>9s}  "
-                  f"{os.path.basename(out)}  (엑셀에 Sheet1 없음)")
+            t.add_row(zone, R.blank(), str(len(mine)), R.blank(), R.blank(),
+                      name, R.note("Sheet1 없음"))
+            skipped.append((zone, "엑셀에 Sheet1 시트가 없어 대조할 원본이 없다"))
             continue
 
         truth = read_sheet1(path)
         # 파일명 구역과 Sheet1 내용의 구간이 다르면 원본 워크북의 잔존 데이터다.
         # (실제로 B1F-나 파일의 Sheet1 은 B1F-사 것과 완전히 동일하다.)
-        content = {t[0].split("-")[0] for t in truth}
+        content = {t2[0].split("-")[0] for t2 in truth}
         if content and prefix not in content:
-            print(f"{zone:<9s} {len(truth):>6d} {len(mine):>6d} {'':>9s} {'':>9s}  "
-                  f"{os.path.basename(out)}  ⚠ Sheet1 내용이 {sorted(content)} 구역 "
-                  f"— 원본 잔존 데이터, 대조 제외")
+            t.add_row(zone, str(len(truth)), str(len(mine)), R.blank(), R.blank(),
+                      name, R.note("대조 제외", style="yellow"))
+            skipped.append((zone, f"Sheet1 내용이 {sorted(content)} 구역이다 "
+                                  f"— 원본 워크북의 잔존 데이터"))
             continue
         # (길이, 장수) 로 짝지어 개수 기준 일치를 센다
-        t_pair = Counter((t[3], t[4]) for t in truth)
+        t_pair = Counter((t2[3], t2[4]) for t2 in truth)
         m_pair = Counter((r[3], r[4]) for r in mine)
         piece_hit = sum((t_pair & m_pair).values())
         # 구간까지 같은 것
-        t_zone = Counter((t[0], t[3], t[4]) for t in truth)
+        t_zone = Counter((t2[0], t2[3], t2[4]) for t2 in truth)
         m_zone = Counter((r[0], r[3], r[4]) for r in mine)
         zone_hit = sum((t_zone & m_zone).values())
 
         grand[0] += len(truth); grand[1] += piece_hit; grand[2] += zone_hit
-        print(f"{zone:<9s} {len(truth):>6d} {len(mine):>6d} "
-              f"{piece_hit:>4d}/{len(truth):<4d} {zone_hit:>4d}/{len(truth):<4d}  "
-              f"{os.path.basename(out)}")
+        t.add_row(zone, str(len(truth)), str(len(mine)),
+                  R.ratio(piece_hit, len(truth)), R.ratio(zone_hit, len(truth)),
+                  name, "")
+    R.console.print(t)
+
+    if skipped:
+        R.heading("대조 제외 사유")
+        for zone, reason in skipped:
+            R.detail(f"{zone}: {reason}", mark="⚠", style="yellow")
 
     if grand[0]:
-        print(f"\n대조 가능 {grand[0]}행 — 부재(길이·장수) 일치 {grand[1]} "
-              f"({grand[1]/grand[0]*100:.0f}%) / 구간까지 일치 {grand[2]} "
-              f"({grand[2]/grand[0]*100:.0f}%)")
+        R.summary(f"대조 가능 {grand[0]}행 — 부재(길이·장수) 일치 {grand[1]} "
+                  f"({grand[1]/grand[0]*100:.0f}%) / 구간까지 일치 {grand[2]} "
+                  f"({grand[2]/grand[0]*100:.0f}%)")
     return 0
 
 

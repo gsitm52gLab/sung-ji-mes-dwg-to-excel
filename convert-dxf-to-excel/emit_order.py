@@ -15,12 +15,11 @@ from collections import defaultdict
 
 from openpyxl import Workbook, load_workbook
 
+import deckreport as R
 import poc_deckorder as M
 from emit_sheet1 import has_sheet1, zone_of
 from deckconfig import cfg
-
-HEADER = ["구간", "도면NO", "SLAB NAME", "타입", "높이", "하부피복", "캠버",
-          "길이", "합계", "CODE", "면적"]
+from deckcheck.models import ORDER_HEADER
 
 
 def excel_sheet1_counts(path):
@@ -120,7 +119,7 @@ def write(rows, path):
     wb = Workbook()
     ws = wb.active
     ws.title = "제작의뢰서"
-    ws.append(HEADER)
+    ws.append(list(ORDER_HEADER))
     for r in rows:
         ws.append(r)
     wb.save(path)
@@ -136,7 +135,8 @@ def main():
     paths = [p for p in sorted(glob.glob(cfg.excel_glob))
              if not os.path.basename(p).startswith("~$")]
 
-    print(f"{'구역':<9s} {'정답행':>6s} {'도면행':>6s} {'도면일치':>9s} {'엑셀S1상한':>11s}  파일")
+    R.heading("구역별 제작의뢰서")
+    t = R.table("구역", "엑셀의뢰행", "도면의뢰행", "도면일치", "엑셀S1상한", "파일")
     tot = hit = 0
     for path in paths:
         zone = zone_of(path)
@@ -150,22 +150,23 @@ def main():
         ok = sum(1 for r in truth
                  if mine.get((r["구간"], r["SLAB"], r["길이"])) == r["합계"] - r["강판"])
 
-        ceiling = "—"
+        ceiling = R.blank()
         if has_sheet1(path):
             agg, zs = excel_sheet1_counts(path)
             if prefix in zs:
                 c = sum(1 for r in truth
                         if agg.get((r["구간"], r["SLAB"], r["길이"]))
                         == r["합계"] - r["강판"])
-                ceiling = f"{c}/{len(truth)}"
+                ceiling = R.ratio(c, len(truth))
 
         tot += len(truth); hit += ok
-        print(f"{zone:<9s} {len(truth):>6d} {len(rows):>6d} {ok:>4d}/{len(truth):<4d} "
-              f"{ceiling:>11s}  {os.path.basename(out)}")
+        t.add_row(zone, str(len(truth)), str(len(rows)),
+                  R.ratio(ok, len(truth)), ceiling, os.path.basename(out))
+    R.console.print(t)
 
-    print(f"\n합계 {hit}/{tot} 행 일치 ({hit/tot*100:.0f}%)")
-    print("엑셀S1상한 = 엑셀 자신의 Sheet1 을 합산했을 때의 일치율. "
-          "이 값이 낮으면 도면이 아니라 합산 규칙이 부족한 것이다.")
+    R.summary(f"합계 {hit}/{tot} 행 일치 ({hit/tot*100:.0f}%)")
+    R.footnote("엑셀S1상한 = 엑셀 자신의 Sheet1 을 합산했을 때의 일치율. "
+               "이 값이 낮으면 도면이 아니라 합산 규칙이 부족한 것이다.")
     return 0
 
 

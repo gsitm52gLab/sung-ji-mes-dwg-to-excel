@@ -15,6 +15,7 @@ import sys
 
 from openpyxl import Workbook
 
+import deckreport as R
 from deckcheck.compare import MATCH, compare
 from deckcheck.dxf_schedule import load_all
 from deckcheck.excel_schedule import load_schedule
@@ -56,13 +57,15 @@ def main():
 
     dxf_records = [r for r in load_all(cfg.detail_dxf) if r.source == "MEGA"]
     by_symbol = {r.symbol: r for r in dxf_records}
-    print(f"도면 일람표(MEGA) {len(dxf_records)}종\n")
+    R.console.print(f"도면 일람표(MEGA) {len(dxf_records)}종")
 
     paths = [p for p in sorted(glob.glob(cfg.excel_glob))
              if not os.path.basename(p).startswith("~$")]
 
     results = []
-    print(f"{'구역':<10s} {'기호':>4s} {'검사셀':>7s} {'일치':>6s} {'불일치':>7s}  생성 파일")
+    details = []   # (구역, 불일치, 경고) — 표를 끊지 않도록 표 아래에 모아 찍는다
+    R.heading("구역별 일람표 대조")
+    t = R.table("구역", "기호", "검사셀", "일치", "불일치", "파일")
     for path in paths:
         zone = zone_of(path)
         excel_records = load_schedule(path)
@@ -73,24 +76,34 @@ def main():
         results.append(result)
         matched = sum(1 for c in result.cells if c.verdict == MATCH)
         bad = len(result.mismatches)
-        mark = "✓" if bad == 0 else "✗"
-        print(f"{zone:<10s} {len(excel_records):>4d} {result.compared_count:>7d} "
-              f"{matched:>6d} {bad:>7d}  {mark} {os.path.basename(out)}")
-        for c in result.mismatches:
-            print(f"    ✗ {c.symbol} {c.column}: 엑셀 {c.excel.value!r} ({c.excel.loc_str()}) "
-                  f"↔ 도면 {c.dxf.raw!r} {c.dxf.loc_str()}" if c.dxf else
-                  f"    ✗ {c.symbol} {c.column}: 도면에 기호 없음")
-        for w in result.warnings:
-            print(f"    ⚠ {w}")
+        t.add_row(zone, str(len(excel_records)), str(result.compared_count),
+                  R.ratio(matched, result.compared_count),
+                  R.note(str(bad), style="green" if bad == 0 else "red"),
+                  os.path.basename(out))
+        if result.mismatches or result.warnings:
+            details.append((zone, result.mismatches, result.warnings))
+    R.console.print(t)
+
+    if details:
+        R.heading("불일치 상세")
+        for zone, mismatches, warnings in details:
+            R.console.print(R.note(zone, style="bold"))
+            for c in mismatches:
+                R.detail(
+                    f"{c.symbol} {c.column}: 엑셀 {c.excel.value!r} "
+                    f"({c.excel.loc_str()}) ↔ 도면 {c.dxf.raw!r} {c.dxf.loc_str()}"
+                    if c.dxf else f"{c.symbol} {c.column}: 도면에 기호 없음")
+            for w in warnings:
+                R.detail(w, mark="⚠", style="yellow")
 
     total_cells = sum(r.compared_count for r in results)
     total_bad = sum(len(r.mismatches) for r in results)
-    print(f"\n합계: {len(results)}구역 / {total_cells}셀 검사 — 불일치 {total_bad}건")
-    print(f"미검증 컬럼: {', '.join(CONSTANT_COLUMNS)} (도면에 해당 정보 없음)")
+    R.summary(f"합계: {len(results)}구역 / {total_cells}셀 검사 — 불일치 {total_bad}건")
+    R.footnote(f"미검증 컬럼: {', '.join(CONSTANT_COLUMNS)} (도면에 해당 정보 없음)")
 
     csv_path = os.path.join(cfg.by_zone_dir, "구역별_대조.csv")
     write_csv(results, csv_path)
-    print(f"→ 상세: {csv_path}")
+    R.footnote(f"→ 상세: {csv_path}")
     return 0 if total_bad == 0 else 1
 
 
