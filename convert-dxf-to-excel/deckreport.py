@@ -74,6 +74,8 @@ COLUMNS: dict[str, Col] = {
     "구간일치": Col(),
     "엑셀S1상한": Col(),
     "대조": Col(justify="left"),
+    # 도면 데이터 품질 — 구간을 가를 근거가 도면에 있는지
+    "분할선": Col(),
     # 자유 문구
     "비고": Col(justify="left", style="yellow"),
 }

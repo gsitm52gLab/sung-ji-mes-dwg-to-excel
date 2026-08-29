@@ -181,6 +181,30 @@ def extract_shop(path, floor):
     return by_floor[floor]
 
 
+def divider_density(dividers, labels):
+    """구역 → (분할선 수, 구간 수). 구간 배정의 근거가 도면에 얼마나 있는지.
+
+    strat_divider_cells 는 `@@@구간` 의 분할선으로 칸을 가른다. 구역에 구간이
+    여럿인데 분할선이 없으면 가를 근거가 없어 부재가 최근접 라벨로 흩어진다.
+    그때 낮게 나오는 일치율은 알고리즘 탓이 아니라 도면에 경계가 안 그려진
+    탓이므로, 이 비율을 함께 보여 원인을 구분할 수 있게 한다.
+
+    분할선은 중점에서 가장 가까운 하위 라벨의 구역에 속한 것으로 센다.
+    """
+    subs = _sub_labels(labels)
+    zones = defaultdict(set)
+    for l in subs:
+        zones[l[2].split("-")[0]].add(l[2])
+    counted = {area: [0, len(names)] for area, names in zones.items()}
+
+    for d in dividers:
+        mid = ((d[0][0] + d[1][0]) / 2, (d[0][1] + d[1][1]) / 2)
+        name = nearest(mid, subs)
+        if name:
+            counted[name.split("-")[0]][0] += 1
+    return {area: tuple(v) for area, v in counted.items()}
+
+
 def load_type_master(path):
     """DETAIL 도면의 일람표 → {기호: 필드}. 타입/TG/피복/캠버를 여기서 가져온다."""
     from deckcheck.dxf_schedule import load_all

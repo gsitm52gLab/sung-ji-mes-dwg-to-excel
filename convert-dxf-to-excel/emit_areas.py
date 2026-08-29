@@ -25,7 +25,8 @@ from openpyxl import Workbook
 import deckreport as R
 import poc_deckorder as M
 from deckconfig import cfg
-from emit_order import norm_slab, order_count, roll_zone
+from emit_order import (SPARSE_DIVIDER_RATIO, norm_slab, order_count,
+                        roll_zone)
 from emit_sheet1 import zone_of
 from deckcheck.models import EXCEL_HEADER, ORDER_HEADER, PIECE_HEADER
 
@@ -150,10 +151,14 @@ def main():
     # (지하1층 '마-1' 과 지붕 '마-1'). 층을 갈라야 부재가 안 섞인다.
     shop = M.extract_shop_by_floor(cfg.shop_dxf)
     areas = {}
+    density = {}
     for floor, (po, dv, lb, pc, nm, dc) in shop.items():
         assigned = M.strat_divider_cells(po, dv, lb, pc)
         for area, ps in collect(assigned, nm, dc).items():
             areas[(floor, area)] = ps
+        # 구간을 가를 근거가 도면에 얼마나 있는지. 대조할 발주서가 없는 구역
+        # (지붕 전체)에서는 이 값이 결과를 믿을 수 있는지 판단할 유일한 단서다.
+        density[floor] = M.divider_density(dv, lb)
 
     oracle = M.load_oracle(cfg.excel_glob)
     truth = defaultdict(dict)
@@ -168,7 +173,9 @@ def main():
                     f"/ 기존 발주서 {len(have)}개")
 
     R.heading("구역별 발주 엑셀")
-    t = R.table("층", "구역", "구간", "도면부재", "도면의뢰행", "장수", "대조", "파일")
+    t = R.table("층", "구역", "구간", "분할선", "도면부재", "도면의뢰행",
+                "장수", "대조", "파일")
+    sparse = []
     tot = hit = 0
     for key in sorted(areas, key=lambda k: (k[0],
                                             -sum(p["발주장수"] for p in areas[k]))):
@@ -188,11 +195,28 @@ def main():
         else:
             verdict = R.note("발주서 없음 — 신규", style="cyan")
 
-        t.add_row(floor, area, str(zones), str(len(ps)), str(n_rows), str(qty),
+        n_div, n_zone = density[floor].get(area, (0, 0))
+        ratio = n_div / n_zone if n_zone else 0
+        thin = n_zone > 1 and ratio < SPARSE_DIVIDER_RATIO
+        if thin:
+            sparse.append((floor, area, n_div, n_zone))
+
+        t.add_row(floor, area, str(zones),
+                  R.note(str(n_div), style="red" if thin else
+                         "yellow" if ratio < 0.5 else "green"),
+                  str(len(ps)), str(n_rows), str(qty),
                   verdict, os.path.basename(path))
     R.console.print(t)
 
+    if sparse:
+        R.heading("도면 경계 부족 — 구간 배정 근거가 없는 구역")
+        for floor, area, n_div, n_zone in sparse:
+            R.detail(f"{floor}-{area}: 구간 {n_zone}개에 분할선 {n_div}개. "
+                     f"구간별 장수를 믿기 어렵다.", mark="⚠", style="yellow")
+
     R.summary(f"기존 발주서가 있는 구역: {hit}/{tot} 행 일치 ({hit/tot*100:.0f}%)")
+    R.footnote("분할선 = `@@@구간` 레이어에서 그 구역의 구간을 가르는 선의 수. "
+               "구간 수에 비해 적으면 부재가 최근접 라벨로 흩어진다.")
     R.footnote(f"→ {cfg.areas_dir}/"
                f"  (구역당 파일 1개, 시트 3개: 제작의뢰서 / Sheet1 / 일람표)")
     return 0
