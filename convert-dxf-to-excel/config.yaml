@@ -1,0 +1,9 @@
+# emit 스크립트 입력/출력 경로. 경로는 이 파일 위치(convert-dxf-to-excel/) 기준.
+# shop/detail dxf는 상위의 convert-dwg-to-dxf/output/, 기존 발주서는 arch-docs/excel/ 에 있다.
+input:
+  shop_dxf:   "../convert-dwg-to-dxf/output/260601_식사푸르지오_DECK SHOP_B1F ,1F 발주 구간(0529 수취 반영도면).dxf"
+  detail_dxf: "../convert-dwg-to-dxf/output/260610_식사푸르지오_DECK DETAIL.dxf"
+  excel_glob: "../arch-docs/excel/*.xlsm"
+output:
+  areas_dir:   "output/area"    # emit_areas.py
+  by_zone_dir: "output/zone"    # emit_by_zone.py / emit_order.py / emit_sheet1.py
