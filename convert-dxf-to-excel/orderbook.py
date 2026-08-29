@@ -5,8 +5,12 @@
 14행짜리 머리말(발주 정보 · 강판타입/데크타입 참조표 · 집계 수식)을 두고
 15행부터 데이터가 시작하며, 열도 A~R 로 정해져 있다. 그 배치를 그대로 쓴다.
 
-recheck 탭은 이 파일을 열어 본 사람이 무엇을 다시 봐야 하는지 담는다.
-기존 발주서가 있으면 행별 대조를, 없으면(지붕 전 구역) 도면 추적만 낸다.
+RECHECK 탭도 발주서에 원래 있는 시트다. 제작의뢰서를 INDIRECT 로 그대로
+비추고 타입체크·길이체크·수량체크 세 칸을 덧붙인 생산측 점검표이며,
+그 세 칸은 비워 둔 채 현장에서 손으로 채운다. 원본 그대로 만든다.
+
+도면 대조 결과(기존 발주서와의 행별 비교, 부재 추적)는 발주서 양식에 없는
+것이라 `도면대조` 라는 별도 시트로 뺀다.
 """
 
 from __future__ import annotations
@@ -53,6 +57,13 @@ COL_WIDTH = {"A": 18.8, "B": 4.8, "C": 7.8, "D": 5.8, "E": 6.8, "F": 8.8,
              "M": 5.8, "N": 5.8, "O": 5.8, "P": 6.8, "Q": 10.8, "R": 10.8,
              "S": 9.2, "T": 9.4}
 
+# RECHECK 는 제작의뢰서의 같은 주소를 그대로 비춘다. 원본 수식 그대로다.
+MIRROR = ('=IF(INDIRECT("제작의뢰서!"&ADDRESS(ROW(),COLUMN()))="","",'
+          'INDIRECT("제작의뢰서!"&ADDRESS(ROW(),COLUMN())))')
+MIRROR_LAST_COL = 20        # A~T 까지 비추고 U(수량체크) 는 빈칸이다
+RECHECK_CHECKS = [("S", "타입체크\n(높이,선경)"), ("T", "길이체크"),
+                  ("U", "수량체크")]
+
 _THIN = Side(style="thin")
 _BOX = Border(left=_THIN, right=_THIN, top=_THIN, bottom=_THIN)
 _HEAD_FILL = PatternFill("solid", fgColor="DDEBF7")
@@ -73,14 +84,19 @@ def _put(ws, coord, value, *, bold=False, fill=False, box=True, center=True):
     return c
 
 
-def write_header(ws, info, codes):
-    """1~14행 머리말. codes 는 이 파일이 쓰는 CODE 목록(참조표 채움용)."""
+def write_header(ws, info, codes, *, title="MEGA DECK 생산의뢰서",
+                 notes_end="T"):
+    """1~14행 머리말. 제작의뢰서와 RECHECK 가 함께 쓴다.
+
+    codes 는 이 파일이 쓰는 CODE 목록(참조표 채움용), notes_end 는
+    특이사항 기입란이 어느 열까지 뻗는지다 (제작의뢰서 T, RECHECK U).
+    """
     for col, w in COL_WIDTH.items():
         ws.column_dimensions[col].width = w
 
     # 제목. 원본은 단부재 첫 글자로 MEGA/GIGA/TERA 를 고르는 수식인데,
     # 단부재가 'MVS' 로 고정이라 결과는 항상 MEGA 다.
-    t = _put(ws, "A1", "MEGA DECK 생산의뢰서", bold=True, box=False)
+    t = _put(ws, "A1", title, bold=True, box=False)
     t.font = Font(bold=True, size=16)
     ws.merge_cells("A1:J4")
 
@@ -139,7 +155,7 @@ def write_header(ws, info, codes):
     ws.merge_cells("R8:T8")
 
     _put(ws, "A9", "추가 특이사항 또는 요청사항 기입란", center=False)
-    ws.merge_cells("A9:T10")
+    ws.merge_cells(f"A9:{notes_end}10")
 
     # 열 머리말 (11~12행). TYPE 은 D~I 6칸을 묶는 상위 머리말이다.
     for col, name in COLUMNS:
@@ -152,11 +168,6 @@ def write_header(ws, info, codes):
     for col, name in COLUMNS:
         if col in "DEFGHI":
             _put(ws, f"{col}12", HEADER_TEXT.get(name, name), bold=True, fill=True)
-    _put(ws, "S11", "단열재", bold=True, fill=True)
-    ws.merge_cells("S11:T11")
-    _put(ws, "S12", "종류", bold=True, fill=True)
-    _put(ws, "T12", "두께", bold=True, fill=True)
-
     # 소계 행
     for col in ("K", "L", "M", "N", "O", "P", "R"):
         _put(ws, f"{col}13",
@@ -180,23 +191,58 @@ def write_rows(ws, rows):
                 c.alignment = Alignment(horizontal="center")
 
 
-def write_order_sheet(ws, rows, info):
-    ws.title = "제작의뢰서"
+def used_codes(rows):
     seen = []
     for row in rows:
         code = row.get("CODE")
         if code and code not in seen:
             seen.append(code)
-    write_header(ws, info, seen)
+    return seen
+
+
+def write_order_sheet(ws, rows, info):
+    ws.title = "제작의뢰서"
+    write_header(ws, info, used_codes(rows))
+    _put(ws, "S11", "단열재", bold=True, fill=True)
+    ws.merge_cells("S11:T11")
+    _put(ws, "S12", "종류", bold=True, fill=True)
+    _put(ws, "T12", "두께", bold=True, fill=True)
     write_rows(ws, rows)
     ws.freeze_panes = f"A{FIRST_DATA_ROW}"
 
 
-# ---------------------------------------------------------------------------
-# recheck
+def write_recheck_sheet(ws, rows):
+    """RECHECK 탭. 제작의뢰서를 그대로 비추고 검사 칸 세 개를 덧붙인다.
 
-RECHECK_COMPARE = ["구간", "SLAB NAME", "길이", "엑셀", "도면", "차이", "판정"]
-RECHECK_TRACE = ["구간", "SLAB NAME", "길이", "도면NO", "x", "y",
+    발주 정보도 값이 아니라 제작의뢰서 참조다 — 원본이 그렇게 돼 있어
+    제작의뢰서를 고치면 RECHECK 가 따라 바뀐다.
+    """
+    ws.title = "RECHECK"
+    ref = {label: f"=제작의뢰서!B{r}" for label, r in LEFT_INFO}
+    ref.update({label: f"=제작의뢰서!I{r}" for label, r in RIGHT_INFO})
+    write_header(ws, ref, used_codes(rows), title="생산 RECHECK", notes_end="U")
+
+    # 요청코드 칸이 T~U 두 칸으로 넓다
+    for r in range(1, 8):
+        ws.merge_cells(f"T{r}:U{r}")
+    for col, name in RECHECK_CHECKS:
+        _put(ws, f"{col}11", name, bold=True, fill=True)
+        ws.merge_cells(f"{col}11:{col}12")
+
+    for r in range(FIRST_DATA_ROW, LAST_FORMULA_ROW + 1):
+        for c in range(1, MIRROR_LAST_COL + 1):
+            cell = ws.cell(r, c)
+            cell.value = MIRROR
+            cell.border = _BOX
+        ws.cell(r, MIRROR_LAST_COL + 1).border = _BOX
+    ws.freeze_panes = f"A{FIRST_DATA_ROW}"
+
+
+# ---------------------------------------------------------------------------
+# 도면대조 — 발주서 양식에 없는, 이 파이프라인이 덧붙이는 시트
+
+COMPARE_HEADER = ["구간", "SLAB NAME", "길이", "엑셀", "도면", "차이", "판정"]
+TRACE_HEADER = ["구간", "SLAB NAME", "길이", "도면NO", "x", "y",
                  "장수", "잔여", "발주"]
 
 
@@ -208,12 +254,13 @@ def _section(ws, r, title, header):
     return r + 2
 
 
-def write_recheck_sheet(ws, rows, pieces, truth, source):
-    """recheck 탭. 위에 기존 발주서 대조, 아래에 도면 추적.
+def write_compare_sheet(ws, rows, pieces, truth, source):
+    """도면대조 시트. 위에 기존 발주서 대조, 아래에 도면 추적.
 
-    truth 가 없으면(기존 발주서가 없는 구역) 대조는 사유만 적고 넘어간다.
+    발주서 양식에는 없는 시트다. 도면에서 뽑은 값이 맞는지 사람이 확인할
+    근거를 남긴다. truth 가 없으면(기존 발주서가 없는 구역) 추적만 낸다.
     """
-    ws.title = "recheck"
+    ws.title = "도면대조"
     for col, w in (("A", 10), ("B", 11), ("C", 8), ("D", 9), ("E", 12),
                    ("F", 12), ("G", 8), ("H", 8), ("I", 8)):
         ws.column_dimensions[col].width = w
@@ -225,7 +272,7 @@ def write_recheck_sheet(ws, rows, pieces, truth, source):
         c.font = Font(bold=True, size=12)
         r = 3
     else:
-        r = _section(ws, 1, f"[대조] 기존 발주서: {source}", RECHECK_COMPARE)
+        r = _section(ws, 1, f"[대조] 기존 발주서: {source}", COMPARE_HEADER)
         keys = sorted(set(truth) | {(x["구간"], x["SLAB NAME"], x["길이"])
                                     for x in rows})
         mine = {(x["구간"], x["SLAB NAME"], x["길이"]): x["합계"] - x["강판"]
@@ -252,7 +299,7 @@ def write_recheck_sheet(ws, rows, pieces, truth, source):
         r += 3
 
     r = _section(ws, r, "[추적] 제작의뢰서 한 행이 어느 부재에서 왔나",
-                 RECHECK_TRACE)
+                 TRACE_HEADER)
     for p in sorted(pieces, key=lambda p: (p["구간"], -p["길이"], p["도면NO"] or 0)):
         for i, v in enumerate([p["구간"], p["SLAB"], p["길이"], p["도면NO"],
                                round(p["x"]), round(p["y"]),

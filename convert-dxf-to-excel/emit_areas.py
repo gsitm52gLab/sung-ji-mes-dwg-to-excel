@@ -107,9 +107,9 @@ def write_area(area, pieces, master, path, truth=None, source=None):
     wb = Workbook()
 
     orders = order_rows(pieces, master)
+    # 시트 순서는 발주서 원본과 같게 둔다: 제작의뢰서 / Sheet1 / RECHECK / 일람표.
+    # 도면대조는 이 파이프라인이 덧붙이는 것이라 맨 뒤에 둔다.
     orderbook.write_order_sheet(wb.active, orders, cfg.order_info)
-    orderbook.write_recheck_sheet(wb.create_sheet("recheck"), orders, pieces,
-                                  truth, source)
 
     s1 = wb.create_sheet("Sheet1")
     s1.append(list(PIECE_HEADER))
@@ -117,10 +117,15 @@ def write_area(area, pieces, master, path, truth=None, source=None):
         s1.append([p["구간"], p["도면NO"], p["SLAB"],
                    p["길이"], p["발주장수"], p["잔여"]])
 
+    orderbook.write_recheck_sheet(wb.create_sheet("RECHECK"), orders)
+
     sc = wb.create_sheet("일람표")
     sc.append(list(EXCEL_HEADER))
     for r in schedule_rows(pieces, master):
         sc.append(r)
+
+    orderbook.write_compare_sheet(wb.create_sheet("도면대조"), orders, pieces,
+                                  truth, source)
 
     wb.save(path)
     return len(orders)
@@ -226,7 +231,7 @@ def main():
     R.footnote("분할선 = `@@@구간` 레이어에서 그 구역의 구간을 가르는 선의 수. "
                "구간 수에 비해 적으면 부재가 최근접 라벨로 흩어진다.")
     R.footnote(f"→ {cfg.areas_dir}/"
-               f"  (구역당 파일 1개, 시트 4개: 제작의뢰서 / recheck / Sheet1 / 일람표)")
+               f"  (구역당 파일 1개, 시트 5개: 제작의뢰서 / Sheet1 / RECHECK / 일람표 / 도면대조)")
     return 0
 
 
