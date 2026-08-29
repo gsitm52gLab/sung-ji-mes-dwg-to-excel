@@ -26,10 +26,12 @@ import deckreport as R
 import poc_deckorder as M
 from deckconfig import cfg
 import orderbook
-from emit_order import (SPARSE_DIVIDER_RATIO, decompose, norm_slab, order_count,
+from emit_order import (SPARSE_DIVIDER_RATIO, decompose, decompose_one,
+                        norm_slab, order_count,
                         roll_zone, spec_fields)
 from emit_sheet1 import zone_of
-from deckcheck.models import CONSTANT_COLUMNS, EXCEL_HEADER, PIECE_HEADER
+from deckcheck.dxf_schedule import load_all
+from deckcheck.models import CONSTANT_COLUMNS, EXCEL_HEADER
 
 # 발주 대상이 아닌 라벨. 단열 구간과 메모성 텍스트는 제작 부재가 아니다.
 SKIP_AREAS = {"지붕", "B1F"}
@@ -90,20 +92,17 @@ def order_rows(pieces, master):
     return rows
 
 
-def schedule_rows(pieces, master):
-    """그 구역이 실제로 쓰는 데크 타입만 일람표로 낸다."""
-    used = sorted({p["SLAB"] for p in pieces if p["SLAB"] in master})
-    rows = []
-    for slab in used:
-        f = master[slab]
-        rows.append([slab] + [
-            None if col in ("단부재", "강판타입") else f.get(col)
-            for col in EXCEL_HEADER[1:]
-        ])
-    return rows
+def schedule_symbols(pieces, master, catalog):
+    """일람표에 실을 기호. 목록(MEGA) 전체 + 이 구역이 실제로 쓰는 것.
+
+    발주서 6개 모두 쓰지 않는 기호까지 포함해 MEGA 7종을 싣고 있다. 지붕처럼
+    TERA 기호를 섞어 쓰는 구역은 그것도 함께 실어야 조회에 빠짐이 없다.
+    """
+    used = {p["SLAB"] for p in pieces if p["SLAB"] in master}
+    return list(catalog) + sorted(used - set(catalog))
 
 
-def write_area(area, pieces, master, path, truth=None, source=None):
+def write_area(area, pieces, master, catalog, path, truth=None, source=None):
     wb = Workbook()
 
     orders = order_rows(pieces, master)
@@ -111,18 +110,13 @@ def write_area(area, pieces, master, path, truth=None, source=None):
     # 도면대조는 이 파이프라인이 덧붙이는 것이라 맨 뒤에 둔다.
     orderbook.write_order_sheet(wb.active, orders, cfg.order_info)
 
-    s1 = wb.create_sheet("Sheet1")
-    s1.append(list(PIECE_HEADER))
-    for p in sorted(pieces, key=lambda p: (p["구간"], -p["길이"])):
-        s1.append([p["구간"], p["도면NO"], p["SLAB"],
-                   p["길이"], p["발주장수"], p["잔여"]])
-
+    orderbook.write_pieces_sheet(wb.create_sheet("Sheet1"), pieces, master,
+                                 decompose_one)
     orderbook.write_recheck_sheet(wb.create_sheet("RECHECK"), orders)
-
-    sc = wb.create_sheet("일람표")
-    sc.append(list(EXCEL_HEADER))
-    for r in schedule_rows(pieces, master):
-        sc.append(r)
+    orderbook.write_schedule_sheet(wb.create_sheet("일람표"), EXCEL_HEADER,
+                                   master,
+                                   schedule_symbols(pieces, master, catalog),
+                                   CONSTANT_COLUMNS)
 
     orderbook.write_compare_sheet(wb.create_sheet("도면대조"), orders, pieces,
                                   truth, source)
@@ -155,6 +149,8 @@ def existing_orders():
 def main():
     os.makedirs(cfg.areas_dir, exist_ok=True)
     master = M.load_type_master(cfg.detail_dxf)
+    # 일람표에 통째로 싣는 기호 목록. 발주 대상은 MEGA 계열이다.
+    catalog = [r.symbol for r in load_all(cfg.detail_dxf) if r.source == "MEGA"]
 
     # 층별 평면도가 나란히 놓여 있고 구간 이름이 층 사이에서 겹친다
     # (지하1층 '마-1' 과 지붕 '마-1'). 층을 갈라야 부재가 안 섞인다.
@@ -191,7 +187,7 @@ def main():
         floor, area = key
         ps = areas[key]
         path = os.path.join(cfg.areas_dir, f"{floor}-{area}.xlsx")
-        n_rows = write_area(area, ps, master, path,
+        n_rows = write_area(area, ps, master, catalog, path,
                             truth.get(key),
                             os.path.basename(have[key]) if key in have else None)
         qty = sum(p["발주장수"] for p in ps)

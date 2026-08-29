@@ -159,6 +159,18 @@ def spec_fields(master, slab):
 NARROW_MAX = 300
 
 
+def decompose_one(count, remainder):
+    """부재 하나 → (강판, TG1, TG2, 발주장수 P). Sheet1 한 행이 이 값이다."""
+    order = count + (1 if remainder >= EXTRA_DECK_REMAINDER else 0)
+    if remainder == EXACT_REMAINDER:
+        return 1, 0, 0, order
+    if remainder >= EXTRA_DECK_REMAINDER:
+        return 0, 0, 0, order
+    if remainder < NARROW_MAX:
+        return 0, 1, 0, order
+    return 0, 0, 1, order
+
+
 def decompose(pieces):
     """부재 (장수 AF, 잔여 AG) 목록 → (강판, TG1, TG2, TG3).
 

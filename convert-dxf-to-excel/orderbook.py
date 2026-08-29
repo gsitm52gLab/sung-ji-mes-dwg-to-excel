@@ -239,6 +239,86 @@ def write_recheck_sheet(ws, rows):
 
 
 # ---------------------------------------------------------------------------
+# 일람표 — 발주서와 같은 11열 표. 병합도 서식도 없다.
+
+def write_schedule_sheet(ws, header, master, symbols, constants):
+    """일람표. 그 구역이 쓰는 기호만이 아니라 목록 전체를 싣는다.
+
+    제작의뢰서의 VLOOKUP 이 이 표를 참조하므로, 쓰지 않는 기호가 빠지면
+    나중에 행을 더했을 때 조회가 깨진다. 실제 발주서 6개도 모두 쓰지 않는
+    기호까지 포함한 MEGA 7종을 싣고 있다.
+    """
+    for col, w in (("A", 11.6), ("B", 7.6), ("C", 5.3), ("D", 6.9), ("E", 5.1),
+                   ("F", 6.9), ("G", 6.9), ("H", 4.9), ("I", 8.7), ("J", 8.7),
+                   ("K", 8.7)):
+        ws.column_dimensions[col].width = w
+    ws.append(list(header))
+    for symbol in symbols:
+        fields = master.get(symbol) or {}
+        row = [symbol]
+        for col in header[1:]:
+            row.append(constants.get(col) if col in constants
+                       else _num_or_text(fields.get(col)))
+        ws.append(row)
+
+
+def _num_or_text(v):
+    """일람표 값은 전부 문자열로 읽히는데 발주서는 숫자 칸을 숫자로 쓴다."""
+    if v is None:
+        return None
+    try:
+        return int(float(str(v).strip()))
+    except (TypeError, ValueError):
+        return str(v).strip()
+
+
+# ---------------------------------------------------------------------------
+# Sheet1 — 부재 한 줄씩. 머리말 행이 없고 17행부터 바로 데이터다.
+
+SHEET1_FIRST_ROW = 17
+SHEET1_STEEL = " S"          # J 열. 110행 전부 같은 값이다.
+
+# 열 위치와 뜻. 발주서 Sheet1 110행에서 확인한 것만 채운다.
+#   T = 길이 - 60            (110/110)
+#   U = 장수 x 600 + 잔여     (109/110)  — 그 부재가 차지하는 총 폭
+#   AB = 장수, AC = 잔여      (109/110)
+#   AE = 길이, AF = 장수, AG = 잔여 + 60
+# V·W·X(면적 3종)는 원본이 값만 박아 놓았고 수식도 없어 규칙을 알 수 없다.
+# 짐작으로 채우면 물량이 틀리므로 비워 둔다. X3 의 라벨만 원본대로 남긴다.
+DECK_WIDTH_MM = 600
+LENGTH_MARGIN = 60
+
+
+def write_pieces_sheet(ws, pieces, master, decompose_one):
+    """Sheet1. 원본과 같이 머리말 없이 17행부터 쓴다."""
+    ws["X3"] = "실투입물량 (㎡)"
+    # 원본은 도면NO 오름차순 한 줄로 늘어놓는다. 제작의뢰서의 도면NO 가
+    # 이 순번을 가리키므로 순서가 곧 뜻을 갖는다.
+    r = SHEET1_FIRST_ROW
+    for p in sorted(pieces, key=lambda p: (p["도면NO"] is None, p["도면NO"] or 0)):
+        plate, tg1, tg2, order = decompose_one(p["장수"], p["잔여"])
+        fields = master.get(p["SLAB"]) or {}
+        ws[f"A{r}"] = p["구간"]
+        ws[f"B{r}"] = p["도면NO"]
+        ws[f"C{r}"] = p["SLAB"]
+        ws[f"J{r}"] = SHEET1_STEEL
+        ws[f"K{r}"] = p["길이"]
+        ws[f"L{r}"] = plate or None
+        ws[f"M{r}"] = tg1 or None
+        ws[f"N{r}"] = tg2 or None
+        ws[f"P{r}"] = order
+        ws[f"T{r}"] = p["길이"] - LENGTH_MARGIN
+        ws[f"U{r}"] = p["장수"] * DECK_WIDTH_MM + max(p["잔여"] - LENGTH_MARGIN, 0)
+        ws[f"Y{r}"] = _num_or_text(fields.get("상부피복"))
+        ws[f"AB{r}"] = p["장수"]
+        ws[f"AC{r}"] = max(p["잔여"] - LENGTH_MARGIN, 0)
+        ws[f"AE{r}"] = p["길이"]
+        ws[f"AF{r}"] = p["장수"]
+        ws[f"AG{r}"] = p["잔여"]
+        r += 1
+
+
+# ---------------------------------------------------------------------------
 # 도면대조 — 발주서 양식에 없는, 이 파이프라인이 덧붙이는 시트
 
 COMPARE_HEADER = ["구간", "SLAB NAME", "길이", "엑셀", "도면", "차이", "판정"]
