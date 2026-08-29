@@ -315,21 +315,44 @@ def crosses(p, q, seg):
     return _ccw(p, a, b) != _ccw(q, a, b) and _ccw(p, q, a) != _ccw(p, q, b)
 
 
+def _penned_labels(pt, polys, subs):
+    """부재를 감싸는 가장 작은 폴리곤 안의 하위 라벨. 그런 폴리곤이 없으면 빈 목록.
+
+    구획 폴리곤은 분할선처럼 crosses 로 안 걸리지만 엄연한 벽이다. 부재가 어느
+    폴리곤에 갇혀 있으면 그 벽 밖 라벨은 후보에서 빠져야 한다.
+    """
+    best, best_area = None, None
+    for poly in polys:
+        if inside(pt, poly):
+            a = signed_area(poly)
+            if best_area is None or a < best_area:
+                best, best_area = poly, a
+    if best is None:
+        return []
+    return [l for l in subs if inside((l[0], l[1]), best)]
+
+
 def strat_divider_cells(polys, dividers, labels, pieces):
-    """부재를 최근접 라벨에 주되, 분할선을 가로지르면 안 된다.
+    """부재를 최근접 라벨에 주되, 분할선과 구획 폴리곤 벽을 넘지 않는다.
 
     `@@@구간` 의 선 57개는 한 영역을 C-1 / C-2 처럼 나누는 칸막이다.
     부재와 라벨을 잇는 직선이 칸막이를 넘으면 다른 칸이라는 뜻이다.
+
+    분할선이 안 그려진 경계는 구획 폴리곤이 대신 벽이 된다. 그래서 후보를 먼저
+    부재가 갇힌 폴리곤 안의 라벨로 좁힌 뒤(벽 가드), 그 안에서 분할선을 넘지 않는
+    최근접 라벨을 고른다. 품은 폴리곤이 없거나 그 안에 라벨이 없으면 전체 라벨로
+    폴백한다(기존 동작).
     """
     subs = _sub_labels(labels)
     out = defaultdict(list)
     for p in pieces:
         pt = (p[0], p[1])
+        cands = _penned_labels(pt, polys, subs) or subs
         reachable = [
-            l for l in subs
+            l for l in cands
             if not any(crosses(pt, (l[0], l[1]), d) for d in dividers)
         ]
-        name = nearest(pt, reachable or subs)
+        name = nearest(pt, reachable or cands)
         if name:
             out[name].append(p)
     return out
