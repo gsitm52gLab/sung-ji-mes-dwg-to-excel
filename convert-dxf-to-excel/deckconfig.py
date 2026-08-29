@@ -50,6 +50,7 @@ class _Config:
         self.excel_glob = resolve("emit", "input", "excel_glob")
         self.areas_dir = resolve("emit", "output", "areas_dir")
         self.by_zone_dir = resolve("emit", "output", "by_zone_dir")
+        self.poc_dir = resolve("emit", "output", "poc_dir")
 
     def as_env(self):
         """shell에서 소비할 KEY -> 절대경로 매핑."""
@@ -61,6 +62,7 @@ class _Config:
             "EXCEL_GLOB": self.excel_glob,
             "AREAS_DIR": self.areas_dir,
             "BY_ZONE_DIR": self.by_zone_dir,
+            "POC_DIR": self.poc_dir,
         }
 
 

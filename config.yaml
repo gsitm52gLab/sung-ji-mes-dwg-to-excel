@@ -19,3 +19,4 @@ emit:
   output:
     areas_dir:   "convert-dxf-to-excel/output/area"    # emit_areas.py
     by_zone_dir: "convert-dxf-to-excel/output/zone"    # emit_by_zone.py / emit_order.py / emit_sheet1.py
+    poc_dir:     "convert-dxf-to-excel/output/poc"     # poc_deckorder.py (배정 전략 비교)

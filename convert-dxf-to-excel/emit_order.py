@@ -74,16 +74,35 @@ def roll_zone(zone):
 
 
 
-# DECK_CTT 괄호값은 Sheet1 의 AG 이고, AG = 잔여(AC) + 60 이다.
-# 그리고 발주 장수 P 는 잔여가 500 이상이면 도면 장수보다 1 크다
-# (Sheet1 110 행 중 109 행에서 성립).
-REMAINDER_OFFSET = 60
-PARTIAL_THRESHOLD = 500
+# DECK_CTT 괄호값은 Sheet1 의 AG 이고, AG = 잔여(AC) + 60 이다. 이 값 하나가
+# 그 부재를 어떻게 마감하는지를 정한다. 현 6개 발주서 Sheet1 110행 전수 일치:
+#
+#   AG >= 560   잔여 500 이상. 폭을 더 줄일 수 없어 정폭 데크를 한 장 더 쓴다.
+#               → P = 장수 + 1,  M/N 없음,  강판 없음          (63행)
+#   AG == 60    잔여 0. 딱 떨어지므로 강판(L) 한 장으로 마감한다.
+#               → P = 장수,      M/N 없음,  강판 1             (18행)
+#   그 밖       어중간한 자투리 폭. 이를 메우는 부재(M/N)가 한 장 든다.
+#               → P = 장수,      M/N 1,     강판 없음          (29행)
+#
+# 제작의뢰서와 맞춰 보는 키는 `합계 - 강판` 이고 그 값은 ΣP + Σ(M,N) 이다.
+# 즉 발주 장수에는 P 뿐 아니라 자투리 부재 M/N 도 포함된다 — 예전에는 P 만 세어
+# 자투리가 있는 29행이 통째로 한 장씩 모자랐다.
+#
+# 잔여 판정은 AC 셀이 아니라 AG(괄호값)로 한다. 두 값은 보통 AG = AC + 60 이지만
+# 마-6 DS2 행은 AG=6 / AC=546 으로 어긋나 있고, 실제 발주는 AG 쪽과 맞는다.
+EXACT_REMAINDER = 60  # 잔여 0 — 딱 떨어져 강판으로 마감
 
 
 def order_count(count, remainder):
-    """도면 장수(AF) → 발주 장수(P). 남는 폭이 500 이상이면 한 장이 더 든다."""
-    return count + (1 if remainder - REMAINDER_OFFSET >= PARTIAL_THRESHOLD else 0)
+    """도면 (장수 AF, 잔여 AG) → 발주 장수 (= P + M + N).
+
+    한 장 더 쓰는 몫(P)과 자투리를 메우는 몫(M/N)은 서로 배타적이라, 딱
+    떨어지지만 않으면 어느 쪽이든 정확히 한 장이 붙는다. 그래서 560 경계는
+    P 냐 M/N 이냐를 가를 뿐 합계에는 영향이 없어 여기서는 따지지 않는다.
+    """
+    if remainder == EXACT_REMAINDER:
+        return count
+    return count + 1
 
 
 def build(assigned, names, master, prefix):
@@ -127,8 +146,12 @@ def write(rows, path):
 
 def main():
     os.makedirs(cfg.by_zone_dir, exist_ok=True)
-    polys, div, labels, pieces, names, dcns = M.extract_shop(cfg.shop_dxf)
-    assigned = M.strat_divider_cells(polys, div, labels, pieces)
+    # 층별 평면도가 나란히 놓여 있고 구간 이름이 겹치므로 층을 갈라 배정한다.
+    shop = M.extract_shop_by_floor(cfg.shop_dxf)
+    by_floor = {
+        floor: (M.strat_divider_cells(po, dv, lb, pc), nm)
+        for floor, (po, dv, lb, pc, nm, dc) in shop.items()
+    }
     master = M.load_type_master(cfg.detail_dxf)
     oracle = M.load_oracle(cfg.excel_glob)
 
@@ -140,7 +163,10 @@ def main():
     tot = hit = 0
     for path in paths:
         zone = zone_of(path)
-        prefix = zone.split("-")[-1]
+        floor, prefix = zone.split("-", 1)
+        if floor not in by_floor:
+            raise KeyError(f"도면에 {floor} 층이 없습니다. 있는 층: {sorted(by_floor)}")
+        assigned, names = by_floor[floor]
         rows = build(assigned, names, master, prefix)
         out = os.path.join(cfg.by_zone_dir, f"제작의뢰서_{zone}.xlsx")
         write(rows, out)

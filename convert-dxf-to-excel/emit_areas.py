@@ -18,7 +18,6 @@ from __future__ import annotations
 import glob
 import os
 import sys
-import unicodedata
 from collections import defaultdict
 
 from openpyxl import Workbook
@@ -27,6 +26,7 @@ import deckreport as R
 import poc_deckorder as M
 from deckconfig import cfg
 from emit_order import norm_slab, order_count, roll_zone
+from emit_sheet1 import zone_of
 from deckcheck.models import EXCEL_HEADER, ORDER_HEADER, PIECE_HEADER
 
 # 발주 대상이 아닌 라벨. 단열 구간과 메모성 텍스트는 제작 부재가 아니다.
@@ -121,55 +121,74 @@ def write_area(area, pieces, master, path):
     return len(orders)
 
 
+def floor_area(name):
+    """발주서 파일명 → (층, 구역). '…_(MEGA)_B1F-사.xlsm' → ('B1F', '사').
+
+    zone_of 가 NFD 파일명 정규화까지 맡는다.
+    """
+    zone = zone_of(name)
+    return tuple(zone.split("-", 1)) if "-" in zone else None
+
+
 def existing_orders():
-    """구역 → 기존 발주서 경로. 파일명이 NFD 라 정규화해서 찾는다."""
+    """(층, 구역) → 기존 발주서 경로."""
     found = {}
     for p in sorted(glob.glob(cfg.excel_glob)):
-        name = unicodedata.normalize("NFC", os.path.basename(p))
-        if name.startswith("~$"):
+        if os.path.basename(p).startswith("~$"):
             continue
-        for part in name.replace(".xlsm", "").split("_"):
-            if part.startswith("B1F-"):
-                found[part[4:].split(".")[0]] = p
+        key = floor_area(os.path.basename(p))
+        if key:
+            found[key] = p
     return found
 
 
 def main():
     os.makedirs(cfg.areas_dir, exist_ok=True)
-    polys, div, labels, pieces, names, dcns = M.extract_shop(cfg.shop_dxf)
     master = M.load_type_master(cfg.detail_dxf)
-    assigned = M.strat_divider_cells(polys, div, labels, pieces)
-    areas = collect(assigned, names, dcns)
+
+    # 층별 평면도가 나란히 놓여 있고 구간 이름이 층 사이에서 겹친다
+    # (지하1층 '마-1' 과 지붕 '마-1'). 층을 갈라야 부재가 안 섞인다.
+    shop = M.extract_shop_by_floor(cfg.shop_dxf)
+    areas = {}
+    for floor, (po, dv, lb, pc, nm, dc) in shop.items():
+        assigned = M.strat_divider_cells(po, dv, lb, pc)
+        for area, ps in collect(assigned, nm, dc).items():
+            areas[(floor, area)] = ps
 
     oracle = M.load_oracle(cfg.excel_glob)
     truth = defaultdict(dict)
     for r in oracle:
-        truth[area_of(r["구간"])][(r["구간"], r["SLAB"], r["길이"])] = \
-            r["합계"] - r["강판"]
+        key = floor_area(r["파일"])
+        if key:
+            truth[(key[0], area_of(r["구간"]))][
+                (r["구간"], r["SLAB"], r["길이"])] = r["합계"] - r["강판"]
 
     have = existing_orders()
-    R.console.print(f"도면 구역 {len(areas)}개 / 기존 발주서 {len(have)}개")
+    R.console.print(f"도면 층 {len(shop)}개 / 구역 {len(areas)}개 "
+                    f"/ 기존 발주서 {len(have)}개")
 
     R.heading("구역별 발주 엑셀")
-    t = R.table("구역", "구간", "도면부재", "도면의뢰행", "장수", "대조", "파일")
+    t = R.table("층", "구역", "구간", "도면부재", "도면의뢰행", "장수", "대조", "파일")
     tot = hit = 0
-    for area in sorted(areas, key=lambda a: -sum(p["발주장수"] for p in areas[a])):
-        ps = areas[area]
-        path = os.path.join(cfg.areas_dir, f"B1F-{area}.xlsx")
+    for key in sorted(areas, key=lambda k: (k[0],
+                                            -sum(p["발주장수"] for p in areas[k]))):
+        floor, area = key
+        ps = areas[key]
+        path = os.path.join(cfg.areas_dir, f"{floor}-{area}.xlsx")
         n_rows = write_area(area, ps, master, path)
         qty = sum(p["발주장수"] for p in ps)
         zones = len({p["구간"] for p in ps})
 
-        if area in truth:
+        if key in truth:
             mine = {(r[0], r[2], r[7]): r[8] for r in order_rows(ps, master)}
-            truth_area = truth[area]
+            truth_area = truth[key]
             ok = sum(1 for k, v in truth_area.items() if mine.get(k) == v)
             tot += len(truth_area); hit += ok
             verdict = R.ratio(ok, len(truth_area), "행 일치")
         else:
             verdict = R.note("발주서 없음 — 신규", style="cyan")
 
-        t.add_row(area, str(zones), str(len(ps)), str(n_rows), str(qty),
+        t.add_row(floor, area, str(zones), str(len(ps)), str(n_rows), str(qty),
                   verdict, os.path.basename(path))
     R.console.print(t)
 

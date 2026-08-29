@@ -52,6 +52,7 @@ class Col(NamedTuple):
 # 이름이 같으면 정렬·색도 같다는 것이 이 표의 요점이다.
 COLUMNS: dict[str, Col] = {
     # 식별
+    "층": Col(justify="left", style="bold"),
     "구역": Col(justify="left", style="bold"),
     "파일": Col(justify="left", style="dim"),
     # 개수 — 부재 단위 (엑셀 `Sheet1` 입도, 한 행 = 부재 하나)

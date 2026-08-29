@@ -36,6 +36,18 @@ PIECE_LAYER = "DECK_CTT"
 NAME_LAYER = "DskNameLay"
 DCN_LAYER = "NDS_DCN"
 
+# 한 dxf 안에 층별 평면도가 가로로 나란히 놓여 있고, 구간 이름이 층 사이에서
+# 겹친다 (지하1층 '마-1' 과 지붕 '마-1' 이 둘 다 존재). 층을 가르지 않으면
+# 서로 다른 층의 부재가 한 구간으로 합산된다.
+#
+# 층 경계는 좌표 상수 대신 평면도 제목으로 잡는다. 제목은 각 평면도 한가운데
+# 놓이므로, 엔티티를 x 가 가장 가까운 제목에 배정하면 평면도 단위로 갈린다.
+PLAN_TITLE_LAYER = "AA-TEXT"
+
+# 이 POC 가 채점하는 층. 정답지(load_oracle)가 B1F 발주서라 층도 B1F 여야 한다.
+ORDER_FLOOR = "B1F"
+PLAN_TITLE_RE = re.compile(r"(지하\s*(\d+)\s*층|지붕|옥탑|(\d+)\s*층).*?평면도")
+
 # 'C', 'B' 처럼 하이픈 뒤 번호가 없는 것은 구역 전체를 가리키는 상위 라벨이라
 # 배정 대상에서 뺀다. 제작의뢰서 행은 항상 'C-1' 형태다.
 SUB_ZONE_RE = re.compile(r"^[^-]+-\d+")
@@ -67,27 +79,65 @@ def signed_area(poly):
     return abs(s) / 2
 
 
-def extract_shop(path):
-    """SHOP 도면 → (영역 폴리곤, 분할선, 구간 라벨, 부재, 데크명, 도면번호).
+def floor_name(title):
+    """평면도 제목 → 짧은 층 이름. '지하1층 주차장 구조평면도' → 'B1F'.
 
-    `@@@구간` 레이어에는 면과 선이 섞여 있다 (측정: 면 60 / 선 57).
-    선은 한 영역을 C-1 / C-2 처럼 나누는 분할선이므로 따로 담는다.
+    발주 엑셀 파일명이 'B1F-사' 형태라 그쪽 표기에 맞춘다.
+    """
+    m = PLAN_TITLE_RE.search(title)
+    if not m:
+        return None
+    if m.group(2):
+        return f"B{int(m.group(2))}F"
+    if m.group(3):
+        return f"{int(m.group(3))}F"
+    return m.group(1)
+
+
+def _plan_anchors(msp):
+    """평면도 제목의 (x, 층 이름) 목록. 층 배정의 기준점이 된다."""
+    anchors = []
+    for e in msp:
+        if e.dxftype() not in ("TEXT", "MTEXT") or e.dxf.layer != PLAN_TITLE_LAYER:
+            continue
+        text = (e.dxf.text if e.dxftype() == "TEXT" else e.text).strip()
+        name = floor_name(text)
+        if name:
+            anchors.append((float(e.dxf.insert.x), name))
+    return sorted(anchors)
+
+
+def extract_shop_by_floor(path):
+    """SHOP 도면 → {층 이름: (폴리곤, 분할선, 구간 라벨, 부재, 데크명, 도면번호)}.
+
+    도면 읽기가 20초 가까이 걸리므로 한 번만 읽고 층별로 나눈다.
+    부재가 하나도 없는 층(PIT·지하2층)은 결과에서 뺀다.
     """
     doc = ezdxf.readfile(path)
-    polys, dividers, labels, pieces, names, dcns = [], [], [], [], [], []
+    msp = doc.modelspace()
+    anchors = _plan_anchors(msp)
+    if not anchors:
+        raise RuntimeError(
+            f"{PLAN_TITLE_LAYER} 레이어에서 평면도 제목을 찾지 못했습니다: {path}")
+
+    def floor_at(x):
+        return min(anchors, key=lambda a: abs(a[0] - x))[1]
+
+    groups = {name: ([], [], [], [], [], []) for _, name in anchors}
     bad_pieces = 0
 
-    for e in doc.modelspace():
+    for e in msp:
         layer, kind = e.dxf.layer, e.dxftype()
 
         if layer == ZONE_LAYER and kind == "LWPOLYLINE":
             pts = [(p[0], p[1]) for p in e.get_points("xy")]
             if signed_area(pts) < 1.0:
-                dividers.extend(
-                    (pts[i], pts[i + 1]) for i in range(len(pts) - 1)
-                )
+                # 분할선은 조각마다 제 위치의 층에 넣는다
+                for i in range(len(pts) - 1):
+                    seg = (pts[i], pts[i + 1])
+                    groups[floor_at((seg[0][0] + seg[1][0]) / 2)][1].append(seg)
             else:
-                polys.append(pts)
+                groups[floor_at(centroid(pts)[0])][0].append(pts)
             continue
 
         if kind not in ("TEXT", "MTEXT"):
@@ -96,6 +146,7 @@ def extract_shop(path):
         if not text:
             continue
         x, y = float(e.dxf.insert.x), float(e.dxf.insert.y)
+        polys, dividers, labels, pieces, names, dcns = groups[floor_at(x)]
 
         if layer == ZONE_LAYER:
             labels.append((x, y, text))
@@ -113,7 +164,21 @@ def extract_shop(path):
 
     if bad_pieces:
         print(f"⚠ {PIECE_LAYER} 파싱 실패 {bad_pieces}건", file=sys.stderr)
-    return polys, dividers, labels, pieces, names, dcns
+    return {name: g for name, g in groups.items() if g[3]}
+
+
+def extract_shop(path, floor):
+    """층 하나를 골라 (폴리곤, 분할선, 구간 라벨, 부재, 데크명, 도면번호) 로 준다.
+
+    층은 반드시 지정한다. 구간 이름이 층 사이에서 겹치므로 층을 합쳐 놓으면
+    지붕 부재가 지하1층 구간으로 합산된다. 여러 층이 필요하면
+    extract_shop_by_floor 를 쓴다.
+    """
+    by_floor = extract_shop_by_floor(path)
+    if floor not in by_floor:
+        raise KeyError(f"{floor} 층을 도면에서 찾지 못했습니다. "
+                       f"있는 층: {sorted(by_floor)}")
+    return by_floor[floor]
 
 
 def load_type_master(path):
@@ -374,7 +439,8 @@ def score(assigned, oracle, pieces):
             diffs.append((row["구간"], row["SLAB"], row["길이"], want, mine))
         err += abs(mine - want)
 
-    used = len({(x, y) for ps in assigned.values() for x, y, _, _ in ps})
+    # 부재는 (x, y, 길이, 장수, 잔여) 5-튜플이다. 좌표만 쓰므로 나머지는 버린다.
+    used = len({(x, y) for ps in assigned.values() for x, y, *_ in ps})
     return {
         "정확행": exact,
         "총행": len(oracle),
@@ -457,7 +523,8 @@ def write_xlsx(rows, results, oracle, path):
 
 def main():
     print("도면 읽는 중…", file=sys.stderr)
-    polys, dividers, labels, pieces, names, dcns = extract_shop(SHOP_DXF)
+    polys, dividers, labels, pieces, names, dcns = extract_shop(
+        SHOP_DXF, ORDER_FLOOR)
     master = load_type_master(DETAIL_DXF)
     oracle = load_oracle(EXCEL_GLOB)
     print(f"  영역 {len(polys)} / 분할선 {len(dividers)} / 라벨 {len(labels)} "
@@ -480,7 +547,8 @@ def main():
     print(f"\n최고 전략: {best}")
 
     rows = build_rows(results[best]["_assigned"], names, dcns, master)
-    out = "golden/제작의뢰서_PoC.xlsx"
+    os.makedirs(cfg.poc_dir, exist_ok=True)
+    out = os.path.join(cfg.poc_dir, "제작의뢰서_PoC.xlsx")
     for s in results.values():
         s.pop("_assigned", None)
     write_xlsx(rows, results, oracle, out)
