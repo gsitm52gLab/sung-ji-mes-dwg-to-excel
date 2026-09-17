@@ -5,3 +5,4 @@ convert-dwg-to-dxf/output/*.dxf
 convert-dxf-to-excel/output/
 convert-dwg-to-dxf/output/*.cache.pkl
 convert-dwg-to-dxf/output/log.txt
+*.swp

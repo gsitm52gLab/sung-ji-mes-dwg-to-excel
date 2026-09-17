@@ -2,248 +2,89 @@
 <html lang="ko">
 <head>
 <meta charset="UTF-8">
-<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/tabler-icons/2.47.0/iconfont/tabler-icons.min.css">
-<style>
-  * { box-sizing: border-box; margin: 0; padding: 0; }
-  html, body {
-    width: 2400px;
-    height: 1200px;
-    font-family: "Noto Sans CJK KR", "Segoe UI", sans-serif;
-    background: #ffffff;
-    color: #1a1a18;
-  }
-  .card {
-    width: 2360px;
-    height: 1160px;
-    margin: 20px;
-    border: 1px solid #dedcd4;
-    border-radius: 16px;
-    overflow: hidden;
-    display: flex;
-    flex-direction: column;
-  }
-  .titlebar {
-    height: 78px;
-    flex-shrink: 0;
-    display: flex;
-    align-items: center;
-    gap: 14px;
-    padding: 0 32px;
-    border-bottom: 1px solid #e5e3da;
-    background: #ffffff;
-  }
-  .titlebar i { font-size: 26px; color: #185FA5; }
-  .titlebar span { font-size: 24px; font-weight: 500; }
-
-  .body { flex: 1; display: flex; min-height: 0; }
-
-  .left { flex: 1; min-width: 0; display: flex; flex-direction: column; background: #ffffff; }
-  .filerow {
-    padding: 18px 32px;
-    border-bottom: 1px solid #e5e3da;
-    display: flex;
-    flex-direction: column;
-    gap: 10px;
-  }
-  .filerow .row { display: flex; align-items: center; gap: 10px; }
-  .filerow i { font-size: 20px; color: #6b6b66; }
-  .filerow .tag { font-size: 16px; color: #9a9a95; width: 60px; flex-shrink: 0; }
-  .filerow .fname { font-size: 17px; font-weight: 500; color: #1a1a18; }
-
-  .chat { flex: 1; padding: 22px 32px; display: flex; flex-direction: column; gap: 16px; overflow: hidden; }
-
-  .sys-notice {
-    align-self: center;
-    display: flex; align-items: center; gap: 8px;
-    font-size: 14px; color: #6b6b66;
-    background: #f5f4ef;
-    padding: 6px 16px;
-    border-radius: 20px;
-  }
-  .sys-notice i { font-size: 15px; color: #27500A; }
-
-  .result-card { background: #f5f4ef; border-radius: 14px; padding: 22px; }
-  .result-card .loc { font-size: 16px; color: #6b6b66; margin-bottom: 12px; }
-  .badges { display: flex; gap: 10px; margin-bottom: 14px; }
-  .badge { font-size: 15px; font-weight: 500; padding: 5px 16px; border-radius: 8px; }
-  .badge.pass { background: #EAF3DE; color: #27500A; }
-  .badge.warn { background: #FAEEDA; color: #633806; }
-  .badge.err  { background: #FCEBEB; color: #791F1F; }
-  .result-card .msg { font-size: 17px; line-height: 1.6; color: #1a1a18; }
-
-  .bubble-user {
-    align-self: flex-end;
-    max-width: 60%;
-    background: #E6F1FB;
-    border-radius: 14px;
-    padding: 14px 18px;
-  }
-  .bubble-user p { font-size: 16px; color: #0C447C; margin: 0; }
-
-  .bubble-ai { background: #f5f4ef; border-radius: 14px; padding: 18px 22px; max-width: 85%; }
-  .bubble-ai p { font-size: 16px; line-height: 1.6; margin: 0; }
-  .bubble-ai b { font-weight: 500; color: #27500A; }
-
-  .footnote {
-    padding: 0 32px 18px;
-    font-size: 14px;
-    color: #9a9a95;
-  }
-
-  .inputrow {
-    padding: 16px 32px;
-    border-top: 1px solid #e5e3da;
-    display: flex;
-    gap: 12px;
-  }
-  .inputrow input {
-    flex: 1;
-    height: 52px;
-    border: 1px solid #d8d6cd;
-    border-radius: 10px;
-    padding: 0 16px;
-    font-size: 16px;
-    color: #9a9a95;
-  }
-  .inputrow button {
-    width: 52px; height: 52px;
-    border: 1px solid #d8d6cd;
-    border-radius: 10px;
-    background: #fff;
-    display: flex; align-items: center; justify-content: center;
-  }
-  .inputrow button i { font-size: 20px; color: #1a1a18; }
-
-  .right {
-    width: 500px;
-    flex-shrink: 0;
-    border-left: 1px solid #e5e3da;
-    background: #f5f4ef;
-    padding: 26px 24px;
-    display: flex;
-    flex-direction: column;
-    gap: 20px;
-  }
-  .section-label { font-size: 15px; color: #9a9a95; }
-
-  .steps { display: flex; flex-direction: column; gap: 14px; margin-top: 10px; }
-  .step { display: flex; align-items: center; gap: 10px; }
-  .step i { font-size: 20px; }
-  .step span { font-size: 16px; color: #6b6b66; }
-  .step.done i { color: #27500A; }
-  .step.current i { color: #185FA5; }
-  .step.current span { color: #1a1a18; font-weight: 500; }
-  .step.todo i { color: #b4b2a9; }
-  .step.todo span { color: #9a9a95; }
-
-  .hr { height: 1px; background: #e5e3da; }
-
-  .upcard {
-    background: #ffffff;
-    border: 1px solid #e5e3da;
-    border-radius: 12px;
-    padding: 16px;
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    gap: 6px;
-  }
-  .upcard i.file { font-size: 30px; color: #6b6b66; }
-  .upcard .lbl { font-size: 16px; font-weight: 500; }
-  .upcard .stat { font-size: 14px; padding: 2px 10px; border-radius: 8px; background: #EAF3DE; color: #27500A; }
-  .upcard .time { font-size: 13px; color: #9a9a95; }
-
-  .jandi-btn {
-    width: 100%;
-    height: 56px;
-    border: 1px solid #d8d6cd;
-    border-radius: 10px;
-    background: #ffffff;
-    display: flex; align-items: center; justify-content: center; gap: 8px;
-    font-size: 17px; font-weight: 500; color: #1a1a18;
-  }
-  .jandi-btn i { font-size: 20px; color: #185FA5; }
-</style>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>데크 발주 검증</title>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/tabler-icons/3.46.0/tabler-icons.min.css">
+<link rel="stylesheet" href="/static/styles.css">
 </head>
 <body>
-  <div class="card">
-    <div class="titlebar">
-      <i class="ti ti-building"></i>
-      <span>식사푸르지오 B1F~지붕</span>
+
+<!-- 세션 쿠키가 없을 때 보이는 화면 -->
+<div class="login-wrap" id="login-screen" hidden>
+  <form class="login-box" id="login-form">
+    <div class="brand"><i class="ti ti-building"></i><span>데크 발주 검증</span></div>
+    <p class="hint">실제 도면 데이터가 올라가 있어 접속을 제한합니다. 비밀번호를 입력하세요.</p>
+    <input type="password" id="password" placeholder="비밀번호" autocomplete="current-password" required>
+    <div class="err" id="login-error"></div>
+    <button type="submit" id="login-submit">들어가기</button>
+  </form>
+</div>
+
+<!-- 인증 후 채팅 화면 -->
+<div class="card" id="app-screen" hidden>
+  <div class="titlebar">
+    <i class="ti ti-building"></i>
+    <span class="title" id="site-title">식사푸르지오 파크센트</span>
+    <span class="model" id="model-name"></span>
+  </div>
+
+  <div class="body">
+    <div class="left">
+      <div class="filerow">
+        <div class="row"><i class="ti ti-file-description"></i><span class="tag">Shop</span><span class="fname">260601_식사푸르지오_DECK SHOP_B1F ,1F 발주 구간(0529 수취 반영도면).dwg</span></div>
+        <div class="row"><i class="ti ti-file-description"></i><span class="tag">Detail</span><span class="fname">260610_식사푸르지오_DECK DETAIL.dwg</span></div>
+      </div>
+
+      <div class="chat" id="chat"></div>
+
+      <div class="footnote">답변은 도면·엑셀 대조 결과에만 근거합니다. 발주 확정 전 원본 도면으로 교차 확인하세요.</div>
+
+      <form class="inputrow" id="chat-form">
+        <textarea id="input" rows="1" placeholder="질문을 입력하세요 (Enter 전송 · Shift+Enter 줄바꿈)"></textarea>
+        <button type="submit" id="send" aria-label="전송"><i class="ti ti-send"></i></button>
+      </form>
     </div>
 
-    <div class="body">
-      <div class="left">
-        <div class="filerow">
-          <div class="row"><i class="ti ti-file-description"></i><span class="tag">Shop</span><span class="fname">식사푸르지오_B1F_Rev05-29.dwg</span></div>
-          <div class="row"><i class="ti ti-file-description"></i><span class="tag">Detail</span><span class="fname">식사푸르지오_Detail_Rev05-29.dwg</span></div>
-        </div>
+    <div class="right">
+      <div>
+        <div class="section-label">대조된 구역</div>
+        <div class="zonelist" id="zonelist"></div>
+      </div>
 
-        <div class="chat">
-          <div class="sys-notice"><i class="ti ti-circle-check"></i>Shop 도면 업로드됨 · 식사푸르지오_B1F_Rev05-29.dwg</div>
-          <div class="sys-notice"><i class="ti ti-circle-check"></i>Detail 도면 업로드됨 · 식사푸르지오_Detail_Rev05-29.dwg</div>
+      <div class="hr"></div>
 
-          <div class="bubble-user"><p>두 도면 검증 요청할게</p></div>
-
-          <div class="result-card">
-            <div class="loc">B1F 나 구간</div>
-            <div class="badges">
-              <span class="badge pass">PASS 48</span>
-              <span class="badge warn">WARN 4</span>
-              <span class="badge err">ERROR 1</span>
-            </div>
-            <p class="msg">나-1 SLAB TYPE 불일치(DS3S↔DS3)로 발주 확정이 잠겼습니다. 예외 승인이 필요합니다.</p>
-          </div>
-
-          <div class="bubble-user"><p>나-1 근거 자세히 보여줘</p></div>
-
-          <div class="bubble-ai"><p>DS3S는 Support 사용·Camber 없음, DS3는 Support 없음·Camber 200으로 생산조건이 달라 동일 코드로 볼 수 없습니다.</p></div>
-
-          <div class="bubble-user"><p>확인했어, 예외로 승인할게</p></div>
-
-          <div class="bubble-ai"><p><b>예외 승인 완료</b> · 나-1 SLAB TYPE, 사유: 동일 계열 코드 확인 · 처리자 기록 저장됨</p></div>
-        </div>
-
-        <div class="footnote">확정 시 기록: 담당자 · 시각 · 도면 Rev · 적용 규칙 · 예외 사유 → Decision Traceability / 규칙 승격 근거</div>
-
-        <div class="inputrow">
-          <input type="text" value="질문을 입력하세요" readonly />
-          <button><i class="ti ti-send"></i></button>
+      <div>
+        <div class="section-label">진행상황 <span class="demo-badge">데모</span></div>
+        <div class="steps is-demo">
+          <div class="step done"><i class="ti ti-circle-check"></i><span>도면 접수</span></div>
+          <div class="step done"><i class="ti ti-circle-check"></i><span>AI 추출</span></div>
+          <div class="step current"><i class="ti ti-loader-2"></i><span>불일치 대조</span></div>
+          <div class="step todo"><i class="ti ti-circle-dashed"></i><span>발주 확정</span></div>
         </div>
       </div>
 
-      <div class="right">
-        <div>
-          <div class="section-label">진행상황</div>
-          <div class="steps">
-            <div class="step done"><i class="ti ti-circle-check"></i><span>도면 접수</span></div>
-            <div class="step done"><i class="ti ti-circle-check"></i><span>AI 추출</span></div>
-            <div class="step current"><i class="ti ti-loader-2"></i><span>불일치 대조</span></div>
-            <div class="step todo"><i class="ti ti-circle-dashed"></i><span>발주 확정</span></div>
-          </div>
-        </div>
+      <div class="hr"></div>
 
-        <div class="hr"></div>
-
-        <div class="section-label">도면 업로드</div>
-
+      <div class="section-label">도면 업로드 <span class="demo-badge">데모</span></div>
+      <div class="is-demo" style="display:flex;flex-direction:column;gap:12px;">
         <div class="upcard">
           <i class="ti ti-file-description file"></i>
           <span class="lbl">Shop</span>
           <span class="stat">로드됨</span>
-          <span class="time">08/31 14:02</span>
         </div>
-
         <div class="upcard">
           <i class="ti ti-file-description file"></i>
           <span class="lbl">Detail</span>
           <span class="stat">로드됨</span>
-          <span class="time">08/31 14:05</span>
         </div>
-
-        <button class="jandi-btn"><i class="ti ti-send"></i>잔디 송부</button>
+        <button class="jandi-btn" disabled><i class="ti ti-send"></i>잔디 송부</button>
       </div>
     </div>
   </div>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/marked/12.0.2/marked.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/dompurify/3.1.6/purify.min.js"></script>
+<script src="/static/app.js"></script>
 </body>
 </html>

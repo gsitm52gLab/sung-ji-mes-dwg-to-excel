@@ -1,0 +1,372 @@
+/* 목업(frontend/index.html)의 색·간격·아이콘을 그대로 잇는다.
+   바뀐 것은 2400x1200 고정 크기를 걷어내고 화면에 맞춘 것뿐이다. */
+
+:root {
+  --ink: #1a1a18;
+  --ink-mute: #6b6b66;
+  --ink-faint: #9a9a95;
+  --line: #e5e3da;
+  --line-strong: #d8d6cd;
+  --surface: #ffffff;
+  --surface-sunk: #f5f4ef;
+  --blue: #185fa5;
+  --blue-deep: #0c447c;
+  --blue-pale: #e6f1fb;
+  --green: #27500a;
+  --green-pale: #eaf3de;
+  --amber: #633806;
+  --amber-pale: #faeeda;
+  --red: #791f1f;
+  --red-pale: #fcebeb;
+}
+
+* { box-sizing: border-box; margin: 0; padding: 0; }
+
+html, body {
+  width: 100%;
+  height: 100%;
+  font-family: "Noto Sans CJK KR", "Apple SD Gothic Neo", "Segoe UI", sans-serif;
+  background: var(--surface);
+  color: var(--ink);
+}
+
+body { padding: 16px; }
+
+.card {
+  width: 100%;
+  height: 100%;
+  border: 1px solid #dedcd4;
+  border-radius: 16px;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+
+.titlebar {
+  height: 62px;
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 0 24px;
+  border-bottom: 1px solid var(--line);
+  background: var(--surface);
+}
+.titlebar i { font-size: 22px; color: var(--blue); }
+.titlebar .title { font-size: 18px; font-weight: 500; }
+.titlebar .model {
+  margin-left: auto;
+  font-size: 13px;
+  color: var(--ink-faint);
+  font-variant-numeric: tabular-nums;
+}
+
+.body { flex: 1; display: flex; min-height: 0; }
+
+.left { flex: 1; min-width: 0; display: flex; flex-direction: column; background: var(--surface); }
+
+.filerow {
+  padding: 14px 24px;
+  border-bottom: 1px solid var(--line);
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.filerow .row { display: flex; align-items: center; gap: 10px; }
+.filerow i { font-size: 18px; color: var(--ink-mute); flex-shrink: 0; }
+.filerow .tag { font-size: 14px; color: var(--ink-faint); width: 54px; flex-shrink: 0; }
+.filerow .fname {
+  font-size: 15px;
+  font-weight: 500;
+  color: var(--ink);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.chat {
+  flex: 1;
+  padding: 20px 24px 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  overflow-y: auto;
+  /* scroll-behavior: smooth 를 쓰면 안 된다. 스트리밍 중에는 토큰마다
+     scrollTop 을 다시 잡는데, 부드러운 스크롤이 매번 새로 시작되면서
+     애니메이션이 서로를 취소해 바닥에 끝내 닿지 못한다. */
+  overflow-anchor: none;
+}
+
+.sys-notice {
+  align-self: center;
+  max-width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  color: var(--ink-mute);
+  background: var(--surface-sunk);
+  padding: 6px 16px;
+  border-radius: 20px;
+  text-align: center;
+}
+.sys-notice i { font-size: 15px; color: var(--green); flex-shrink: 0; }
+.sys-notice.warn i { color: var(--amber); }
+
+.result-card { background: var(--surface-sunk); border-radius: 14px; padding: 18px; }
+.result-card .loc { font-size: 14px; color: var(--ink-mute); margin-bottom: 10px; }
+.badges { display: flex; gap: 8px; flex-wrap: wrap; }
+.badge { font-size: 13px; font-weight: 500; padding: 4px 14px; border-radius: 8px; }
+.badge.pass { background: var(--green-pale); color: var(--green); }
+.badge.warn { background: var(--amber-pale); color: var(--amber); }
+.badge.err  { background: var(--red-pale); color: var(--red); }
+
+.bubble-user {
+  align-self: flex-end;
+  max-width: 70%;
+  background: var(--blue-pale);
+  border-radius: 14px;
+  padding: 12px 16px;
+}
+.bubble-user p { font-size: 15px; color: var(--blue-deep); white-space: pre-wrap; word-break: break-word; }
+
+.bubble-ai {
+  align-self: flex-start;
+  background: var(--surface-sunk);
+  border-radius: 14px;
+  padding: 14px 18px;
+  max-width: 85%;
+  font-size: 15px;
+  line-height: 1.65;
+  word-break: break-word;
+}
+.bubble-ai p { margin: 0 0 8px; }
+.bubble-ai p:last-child { margin-bottom: 0; }
+.bubble-ai b, .bubble-ai strong { font-weight: 600; color: var(--green); }
+.bubble-ai code {
+  background: #eceadf;
+  border-radius: 4px;
+  padding: 1px 5px;
+  font-size: 13px;
+  font-family: "SFMono-Regular", Consolas, monospace;
+}
+.bubble-ai ul, .bubble-ai ol { margin: 0 0 8px; padding-left: 20px; }
+.bubble-ai li { margin-bottom: 3px; }
+.bubble-ai table {
+  border-collapse: collapse;
+  margin: 8px 0;
+  font-size: 13px;
+  display: block;
+  overflow-x: auto;
+  max-width: 100%;
+}
+.bubble-ai th, .bubble-ai td {
+  border: 1px solid var(--line-strong);
+  padding: 5px 10px;
+  text-align: left;
+  white-space: nowrap;
+}
+.bubble-ai th { background: #eceadf; font-weight: 500; }
+
+/* 응답을 기다리는 동안의 점 세 개 */
+.typing { display: inline-flex; gap: 4px; align-items: center; height: 20px; }
+.typing span {
+  width: 6px; height: 6px; border-radius: 50%;
+  background: var(--ink-faint);
+  animation: blink 1.2s infinite;
+}
+.typing span:nth-child(2) { animation-delay: .2s; }
+.typing span:nth-child(3) { animation-delay: .4s; }
+@keyframes blink { 0%, 60%, 100% { opacity: .25; } 30% { opacity: 1; } }
+
+.error-card {
+  align-self: flex-start;
+  max-width: 85%;
+  background: var(--red-pale);
+  color: var(--red);
+  border-radius: 14px;
+  padding: 14px 18px;
+  font-size: 14px;
+  line-height: 1.6;
+}
+.error-card .retry {
+  margin-top: 10px;
+  border: 1px solid currentColor;
+  background: transparent;
+  color: inherit;
+  border-radius: 8px;
+  padding: 5px 14px;
+  font-size: 13px;
+  cursor: pointer;
+  font-family: inherit;
+}
+.error-card .retry:hover { background: rgba(121, 31, 31, .08); }
+
+.footnote { padding: 0 24px 14px; font-size: 12px; color: var(--ink-faint); }
+
+.inputrow {
+  padding: 14px 24px;
+  border-top: 1px solid var(--line);
+  display: flex;
+  gap: 10px;
+  align-items: flex-end;
+}
+.inputrow textarea {
+  flex: 1;
+  min-height: 46px;
+  max-height: 160px;
+  border: 1px solid var(--line-strong);
+  border-radius: 10px;
+  padding: 12px 14px;
+  font-size: 15px;
+  font-family: inherit;
+  color: var(--ink);
+  resize: none;
+  line-height: 1.5;
+}
+.inputrow textarea:focus { outline: 2px solid var(--blue-pale); border-color: var(--blue); }
+.inputrow textarea::placeholder { color: var(--ink-faint); }
+.inputrow button {
+  width: 46px; height: 46px;
+  flex-shrink: 0;
+  border: 1px solid var(--line-strong);
+  border-radius: 10px;
+  background: var(--surface);
+  display: flex; align-items: center; justify-content: center;
+  cursor: pointer;
+}
+.inputrow button:hover:not(:disabled) { background: var(--surface-sunk); }
+.inputrow button i { font-size: 19px; color: var(--ink); }
+.inputrow button:disabled { opacity: .4; cursor: not-allowed; }
+
+.right {
+  width: 320px;
+  flex-shrink: 0;
+  border-left: 1px solid var(--line);
+  background: var(--surface-sunk);
+  padding: 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  overflow-y: auto;
+}
+.section-label {
+  font-size: 13px;
+  color: var(--ink-faint);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.demo-badge {
+  font-size: 11px;
+  padding: 1px 7px;
+  border-radius: 6px;
+  background: #e4e2d8;
+  color: var(--ink-mute);
+  font-weight: 500;
+}
+
+/* 이번 범위 밖인 UI. 시안은 남기되 만질 수 없다는 것을 분명히 한다. */
+.is-demo { opacity: .55; pointer-events: none; user-select: none; }
+
+.steps { display: flex; flex-direction: column; gap: 12px; margin-top: 10px; }
+.step { display: flex; align-items: center; gap: 10px; }
+.step i { font-size: 18px; }
+.step span { font-size: 14px; color: var(--ink-mute); }
+.step.done i { color: var(--green); }
+.step.current i { color: var(--blue); }
+.step.current span { color: var(--ink); font-weight: 500; }
+.step.todo i { color: #b4b2a9; }
+.step.todo span { color: var(--ink-faint); }
+
+.hr { height: 1px; background: var(--line); flex-shrink: 0; }
+
+.zonelist { display: flex; flex-direction: column; gap: 6px; margin-top: 8px; }
+.zone {
+  display: flex; align-items: center; gap: 8px;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 8px 12px;
+  font-size: 14px;
+}
+.zone i { font-size: 15px; color: var(--green); }
+
+.upcard {
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  padding: 14px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 5px;
+}
+.upcard i.file { font-size: 26px; color: var(--ink-mute); }
+.upcard .lbl { font-size: 14px; font-weight: 500; }
+.upcard .stat { font-size: 12px; padding: 2px 10px; border-radius: 8px; background: var(--green-pale); color: var(--green); }
+
+.jandi-btn {
+  width: 100%;
+  height: 48px;
+  border: 1px solid var(--line-strong);
+  border-radius: 10px;
+  background: var(--surface);
+  display: flex; align-items: center; justify-content: center; gap: 8px;
+  font-size: 15px; font-weight: 500; color: var(--ink);
+  font-family: inherit;
+}
+.jandi-btn i { font-size: 18px; color: var(--blue); }
+
+/* ── 로그인 ───────────────────────────────────────────── */
+
+.login-wrap {
+  width: 100%; height: 100%;
+  display: flex; align-items: center; justify-content: center;
+}
+.login-box {
+  width: min(380px, 100%);
+  border: 1px solid #dedcd4;
+  border-radius: 16px;
+  padding: 32px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+.login-box .brand { display: flex; align-items: center; gap: 10px; }
+.login-box .brand i { font-size: 24px; color: var(--blue); }
+.login-box .brand span { font-size: 18px; font-weight: 500; }
+.login-box .hint { font-size: 13px; color: var(--ink-mute); line-height: 1.6; }
+.login-box input {
+  height: 46px;
+  border: 1px solid var(--line-strong);
+  border-radius: 10px;
+  padding: 0 14px;
+  font-size: 15px;
+  font-family: inherit;
+}
+.login-box input:focus { outline: 2px solid var(--blue-pale); border-color: var(--blue); }
+.login-box button {
+  height: 46px;
+  border: none;
+  border-radius: 10px;
+  background: var(--blue);
+  color: #fff;
+  font-size: 15px;
+  font-weight: 500;
+  font-family: inherit;
+  cursor: pointer;
+}
+.login-box button:hover:not(:disabled) { background: var(--blue-deep); }
+.login-box button:disabled { opacity: .5; cursor: not-allowed; }
+.login-box .err { font-size: 13px; color: var(--red); min-height: 18px; }
+
+[hidden] { display: none !important; }
+
+/* 좁은 화면에서는 사이드바를 접는다. 채팅이 본체다. */
+@media (max-width: 900px) {
+  body { padding: 0; }
+  .card { border: none; border-radius: 0; }
+  .right { display: none; }
+  .bubble-user, .bubble-ai, .error-card { max-width: 92%; }
+}
