@@ -24,13 +24,18 @@ import hashlib
 import hmac
 import json
 import os
+import queue
+import shutil
+import tempfile
+import threading
 from pathlib import Path
 from typing import Iterator
 
-from fastapi import Cookie, FastAPI, HTTPException, Request
+from fastapi import Cookie, FastAPI, File, HTTPException, Request, UploadFile
 from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 
+import pipeline
 from context import build_system_prompt
 
 HERE = Path(__file__).resolve().parent
@@ -43,6 +48,10 @@ SESSION_COOKIE = "deckchat_session"
 MAX_MESSAGES = 40
 MAX_CHARS_PER_MESSAGE = 4000
 MAX_OUTPUT_TOKENS = 1500
+
+# 업로드 상한. SHOP 도면이 30MB 대라 여유를 두되 무한정 받지는 않는다.
+MAX_UPLOAD_BYTES = 64 * 1024 * 1024
+UPLOAD_SUFFIX = ".dwg"
 
 
 def _require_env(name: str, hint: str) -> str:
@@ -69,7 +78,31 @@ APP_PASSWORD = _require_env(
     "접속 비밀번호입니다. 데이터가 실제 고객 도면이라 인증 없이 띄우지 않습니다.",
 )
 
-SYSTEM_PROMPT, DATA_META = build_system_prompt(DATA_CSV)
+# 업로드로 갈아끼울 수 있어야 하므로 상수가 아니라 가변 상태로 둔다.
+# 서버 하나가 하나의 현재 데이터셋을 갖는다 — 사용자별로 나누지 않는다.
+# 시연용으로는 충분하고, 여러 사람이 동시에 올리면 마지막 것이 이긴다.
+_prompt, _meta = build_system_prompt(DATA_CSV)
+_dataset = {"prompt": _prompt, "meta": _meta}
+_dataset_lock = threading.Lock()
+
+
+def current_prompt() -> str:
+    with _dataset_lock:
+        return _dataset["prompt"]
+
+
+def current_meta() -> dict:
+    with _dataset_lock:
+        return dict(_dataset["meta"])
+
+
+def replace_dataset(csv_path: Path, source_name: str) -> dict:
+    prompt, meta = build_system_prompt(csv_path)
+    meta["source"] = source_name
+    with _dataset_lock:
+        _dataset["prompt"] = prompt
+        _dataset["meta"] = meta
+    return meta
 
 
 def _session_token() -> str:
@@ -112,7 +145,7 @@ def _sse(event: str, payload: dict) -> str:
 
 def _to_messages(messages: list[dict]) -> list[dict]:
     """채팅 이력을 OpenAI 형식 메시지 목록으로 바꾼다. 맨 앞에 시스템 프롬프트."""
-    out = [{"role": "system", "content": SYSTEM_PROMPT}]
+    out = [{"role": "system", "content": current_prompt()}]
     for message in messages:
         text = (message.get("content") or "").strip()
         if not text:
@@ -178,7 +211,13 @@ async def meta(deckchat_session: str | None = Cookie(default=None)):
         return {"authed": False}
     # BASE_URL 의 호스트만 싣는다. 키는 어떤 경우에도 내보내지 않는다.
     host = BASE_URL.split("//")[-1].split("/")[0]
-    return {"authed": True, "model": MODEL, "provider": host, "data": DATA_META}
+    return {
+        "authed": True,
+        "model": MODEL,
+        "provider": host,
+        "data": current_meta(),
+        "upload_enabled": pipeline.converter_available(),
+    }
 
 
 @app.post("/api/chat")
@@ -196,6 +235,85 @@ async def chat(request: Request, deckchat_session: str | None = Cookie(default=N
 
     return StreamingResponse(
         _stream_reply(messages),
+        media_type="text/event-stream",
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+    )
+
+
+def _run_pipeline_stream(dwg_path: Path, workdir: Path, name: str) -> Iterator[str]:
+    """파이프라인을 딴 스레드에서 돌리고 진행 상황을 SSE 로 흘린다.
+
+    변환과 대조는 수십 초가 걸리는 블로킹 작업이다. 그 동안 화면이 멈춰 있으면
+    사용자는 죽은 줄 안다. 큐를 하나 두고 진행 메시지를 그때그때 내보낸다.
+    """
+    events: "queue.Queue[tuple[str, dict] | None]" = queue.Queue()
+
+    def progress(step: str, message: str) -> None:
+        events.put(("progress", {"step": step, "message": message}))
+
+    def work() -> None:
+        try:
+            result = pipeline.run(dwg_path, workdir, progress)
+            meta = replace_dataset(result.csv_path, name)
+            events.put(("progress", {"step": "done", "message": "대조 완료"}))
+            events.put(("complete", {"data": meta, "dxf_bytes": result.dxf_bytes}))
+        except pipeline.PipelineError as exc:
+            events.put(("error", {"message": str(exc)}))
+        except Exception as exc:  # 예상 못 한 실패도 화면까지 올린다
+            events.put(("error", {"message": f"{type(exc).__name__}: {str(exc)[:300]}"}))
+        finally:
+            events.put(None)
+
+    thread = threading.Thread(target=work, daemon=True)
+    thread.start()
+
+    yield _sse("progress", {"step": "upload", "message": f"{name} 접수됨"})
+    while True:
+        item = events.get()
+        if item is None:
+            break
+        event, payload = item
+        yield _sse(event, payload)
+
+    shutil.rmtree(workdir, ignore_errors=True)
+
+
+@app.post("/api/upload")
+async def upload(
+    request: Request,
+    file: UploadFile = File(...),
+    deckchat_session: str | None = Cookie(default=None),
+):
+    if not _authed(deckchat_session):
+        raise HTTPException(status_code=401, detail="로그인이 필요합니다.")
+
+    name = Path(file.filename or "").name
+    if not name.lower().endswith(UPLOAD_SUFFIX):
+        raise HTTPException(status_code=400, detail="dwg 파일만 올릴 수 있습니다.")
+
+    # 파이프라인이 파일 경로를 요구하므로 일단 디스크에 받는다. Render 는
+    # 재시작하면 디스크가 날아가는데, 어차피 한 번 쓰고 버릴 파일이라 맞다.
+    workdir = Path(tempfile.mkdtemp(prefix="deckupload-"))
+    dwg_path = workdir / name
+    size = 0
+    with open(dwg_path, "wb") as out:
+        while chunk := await file.read(1024 * 1024):
+            size += len(chunk)
+            if size > MAX_UPLOAD_BYTES:
+                out.close()
+                shutil.rmtree(workdir, ignore_errors=True)
+                raise HTTPException(
+                    status_code=413,
+                    detail=f"파일이 너무 큽니다 (상한 {MAX_UPLOAD_BYTES // (1024*1024)}MB).",
+                )
+            out.write(chunk)
+
+    if size == 0:
+        shutil.rmtree(workdir, ignore_errors=True)
+        raise HTTPException(status_code=400, detail="빈 파일입니다.")
+
+    return StreamingResponse(
+        _run_pipeline_stream(dwg_path, workdir, name),
         media_type="text/event-stream",
         headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
     )

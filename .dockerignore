@@ -1,0 +1,17 @@
+# 빌드 컨텍스트는 리포지토리 루트다. 무거운 산출물과 원본 도면은 이미지에
+# 들어갈 이유가 없다. 실제로 들어가는 것은 frontend/, deckcheck, 발주 엑셀,
+# 그리고 ODA 설치 deb 뿐이다.
+.git
+.claude
+.superpowers
+docs
+arch-docs/dwg
+convert-dwg-to-dxf/output
+convert-dwg-to-dxf/Dockerfile
+convert-dwg-to-dxf/convert-dwg-to-dxf.sh
+convert-dxf-to-excel/output
+convert-dxf-to-excel/__pycache__
+convert-dxf-to-excel/.pytest_cache
+**/__pycache__
+**/*.pyc
+**/*.swp

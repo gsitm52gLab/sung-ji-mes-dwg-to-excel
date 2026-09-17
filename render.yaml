@@ -1,7 +1,8 @@
 # Render Blueprint. 리포지토리를 연결하면 이 파일대로 서비스가 만들어진다.
 #
-# 빌드 컨텍스트를 frontend/ 로 좁힌 것이 중요하다. 리포지토리 루트를 그대로
-# 넘기면 도면 dxf 와 발주 엑셀까지 이미지에 딸려 들어간다.
+# 빌드 컨텍스트가 리포지토리 루트인 것은 frontend/ 밖의 deckcheck 와 발주
+# 엑셀, ODA 설치 deb 가 이미지에 필요하기 때문이다. 무거운 산출물(원본 dwg,
+# 변환된 dxf)은 루트 .dockerignore 로 걸러진다.
 services:
   - name: deck-order-check
     type: web
@@ -9,7 +10,7 @@ services:
     plan: free
     region: singapore
     dockerfilePath: ./frontend/Dockerfile
-    dockerContext: ./frontend
+    dockerContext: .
     envVars:
       # sync:false 는 값을 리포지토리에 두지 않고 Blueprint 생성 시점에
       # 대시보드에서 직접 입력받는다는 뜻이다. 비밀은 여기 적지 않는다.

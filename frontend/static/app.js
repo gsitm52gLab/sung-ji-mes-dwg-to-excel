@@ -258,6 +258,138 @@ inputEl.addEventListener("keydown", (e) => {
 });
 $("chat-form").addEventListener("submit", submitInput);
 
+/* ── 도면 업로드 ─────────────────────────────────────── */
+
+// 서버가 SSE 로 알려 주는 단계들. 화면 순서는 여기 적힌 순서를 따른다.
+const STEPS = [
+  ["upload", "도면 접수"],
+  ["convert", "dwg → dxf 변환"],
+  ["compare", "일람표 대조"],
+  ["done", "완료"],
+];
+
+function showProgress(activeStep) {
+  const block = $("progress-block");
+  const hr = $("progress-hr");
+  block.hidden = false;
+  hr.hidden = false;
+
+  const activeIndex = STEPS.findIndex(([key]) => key === activeStep);
+  const steps = $("steps");
+  steps.innerHTML = "";
+  STEPS.forEach(([key, label], i) => {
+    const state = i < activeIndex ? "done" : i === activeIndex ? "current" : "todo";
+    const el = document.createElement("div");
+    el.className = "step " + state;
+    const icon = document.createElement("i");
+    icon.className =
+      state === "done" ? "ti ti-circle-check"
+      : state === "current" ? "ti ti-loader-2"
+      : "ti ti-circle-dashed";
+    const span = document.createElement("span");
+    span.textContent = label;
+    el.append(icon, span);
+    steps.appendChild(el);
+  });
+}
+
+function hideProgress() {
+  $("progress-block").hidden = true;
+  $("progress-hr").hidden = true;
+}
+
+function uploadNote(text, isError) {
+  const el = $("upload-note");
+  el.textContent = text || "";
+  el.classList.toggle("err", Boolean(isError));
+}
+
+async function uploadDwg(file) {
+  if (busy) return;
+  setBusy(true);
+  $("pick-file").disabled = true;
+  uploadNote("");
+  showProgress("upload");
+  notice(`도면 업로드: ${file.name}`);
+
+  const body = new FormData();
+  body.append("file", file);
+
+  try {
+    const response = await fetch("/api/upload", { method: "POST", body });
+    if (response.status === 401) { showLogin("세션이 만료됐습니다."); return; }
+    if (!response.ok) {
+      let detail = `서버 오류 ${response.status}`;
+      try { detail = (await response.json()).detail || detail; } catch (e) { /* 본문 없음 */ }
+      throw new Error(detail);
+    }
+
+    let failed = false;
+    for await (const { event, data } of readSSE(response)) {
+      if (event === "progress") {
+        showProgress(data.step);
+      } else if (event === "complete") {
+        // 대조 결과가 통째로 바뀌었다. 화면도 새 결과로 다시 그린다.
+        renderZones(data.data);
+        notice(`대조 완료 · ${data.data.zones.length}개 구역 · 비교 셀 ${data.data.cell_count}건`);
+        if (data.data.bad_count === 0) {
+          notice("어긋난 셀이 없습니다. 비교한 모든 셀이 일치했습니다.");
+        } else {
+          notice(`어긋난 셀 ${data.data.bad_count}건이 있습니다.`, "warn");
+        }
+        uploadNote(`${file.name} 반영됨`);
+        // 상단 파일명도 방금 올린 도면으로 바꾼다. 그대로 두면 화면이
+        // 옛 도면을 가리키면서 새 대조 결과를 보여주는 꼴이 된다.
+        $("detail-name").textContent = file.name;
+      } else if (event === "error") {
+        failed = true;
+        errorCard(data.message);
+        uploadNote("처리하지 못했습니다", true);
+      }
+    }
+    if (failed) hideProgress();
+    else setTimeout(hideProgress, 1500);
+  } catch (err) {
+    errorCard(`업로드 실패: ${err.message}`);
+    uploadNote(err.message, true);
+    hideProgress();
+  } finally {
+    $("pick-file").disabled = false;
+    setBusy(false);
+    $("dwg-file").value = "";
+  }
+}
+
+$("pick-file").addEventListener("click", () => $("dwg-file").click());
+$("dwg-file").addEventListener("change", (e) => {
+  const file = e.target.files[0];
+  if (file) uploadDwg(file);
+});
+
+// 끌어다 놓기도 받는다. 파일 선택 대화상자보다 이쪽이 빠르다.
+const dropTarget = $("pick-file");
+["dragenter", "dragover"].forEach((type) =>
+  dropTarget.addEventListener(type, (e) => {
+    e.preventDefault();
+    dropTarget.classList.add("dragover");
+  })
+);
+["dragleave", "drop"].forEach((type) =>
+  dropTarget.addEventListener(type, (e) => {
+    e.preventDefault();
+    dropTarget.classList.remove("dragover");
+  })
+);
+dropTarget.addEventListener("drop", (e) => {
+  const file = e.dataTransfer.files[0];
+  if (!file) return;
+  if (!file.name.toLowerCase().endsWith(".dwg")) {
+    uploadNote("dwg 파일만 올릴 수 있습니다", true);
+    return;
+  }
+  uploadDwg(file);
+});
+
 /* ── 인증 ────────────────────────────────────────────── */
 
 function showLogin(message) {
@@ -272,7 +404,14 @@ function showApp(meta) {
   appScreen.hidden = false;
   $("model-name").textContent = meta.provider ? `${meta.model} · ${meta.provider}` : meta.model;
   chatEl.innerHTML = "";
+  hideProgress();
   renderSummary(meta.data);
+  // 변환기가 없는 환경(로컬 맥 등)에서는 업로드를 눌러도 실패한다.
+  // 눌리기 전에 그 사실을 알린다.
+  if (!meta.upload_enabled) {
+    $("pick-file").disabled = true;
+    uploadNote("이 서버에는 도면 변환기가 없어 업로드를 쓸 수 없습니다. 배포 환경에서만 동작합니다.");
+  }
   inputEl.focus();
 }
 

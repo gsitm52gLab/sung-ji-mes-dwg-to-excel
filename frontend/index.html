@@ -32,7 +32,7 @@
     <div class="left">
       <div class="filerow">
         <div class="row"><i class="ti ti-file-description"></i><span class="tag">Shop</span><span class="fname">260601_식사푸르지오_DECK SHOP_B1F ,1F 발주 구간(0529 수취 반영도면).dwg</span></div>
-        <div class="row"><i class="ti ti-file-description"></i><span class="tag">Detail</span><span class="fname">260610_식사푸르지오_DECK DETAIL.dwg</span></div>
+        <div class="row"><i class="ti ti-file-description"></i><span class="tag">Detail</span><span class="fname" id="detail-name">260610_식사푸르지오_DECK DETAIL.dwg</span></div>
       </div>
 
       <div class="chat" id="chat"></div>
@@ -53,32 +53,28 @@
 
       <div class="hr"></div>
 
+      <!-- 진행상황: 평소에는 없다. 업로드 처리 중에만 나타난다. -->
+      <div id="progress-block" hidden>
+        <div class="section-label">진행상황</div>
+        <div class="steps" id="steps"></div>
+      </div>
+
+      <div class="hr" id="progress-hr" hidden></div>
+
       <div>
-        <div class="section-label">진행상황 <span class="demo-badge">데모</span></div>
-        <div class="steps is-demo">
-          <div class="step done"><i class="ti ti-circle-check"></i><span>도면 접수</span></div>
-          <div class="step done"><i class="ti ti-circle-check"></i><span>AI 추출</span></div>
-          <div class="step current"><i class="ti ti-loader-2"></i><span>불일치 대조</span></div>
-          <div class="step todo"><i class="ti ti-circle-dashed"></i><span>발주 확정</span></div>
-        </div>
+        <div class="section-label">도면 업로드</div>
+        <input type="file" id="dwg-file" accept=".dwg" hidden>
+        <button type="button" class="upload-btn" id="pick-file">
+          <i class="ti ti-upload"></i>
+          <span class="lbl">dwg 파일 선택</span>
+          <span class="sub">DETAIL 도면을 올리면 일람표를 대조합니다</span>
+        </button>
+        <div class="upload-note" id="upload-note"></div>
       </div>
 
-      <div class="hr"></div>
-
-      <div class="section-label">도면 업로드 <span class="demo-badge">데모</span></div>
-      <div class="is-demo" style="display:flex;flex-direction:column;gap:12px;">
-        <div class="upcard">
-          <i class="ti ti-file-description file"></i>
-          <span class="lbl">Shop</span>
-          <span class="stat">로드됨</span>
-        </div>
-        <div class="upcard">
-          <i class="ti ti-file-description file"></i>
-          <span class="lbl">Detail</span>
-          <span class="stat">로드됨</span>
-        </div>
-        <button class="jandi-btn" disabled><i class="ti ti-send"></i>잔디 송부</button>
-      </div>
+      <button class="jandi-btn" disabled title="이번 범위 밖입니다">
+        <i class="ti ti-send"></i>잔디 송부 <span class="demo-badge">데모</span>
+      </button>
     </div>
   </div>
 </div>
