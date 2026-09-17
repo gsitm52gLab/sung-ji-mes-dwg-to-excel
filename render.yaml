@@ -13,10 +13,15 @@ services:
     envVars:
       # sync:false 는 값을 리포지토리에 두지 않고 Blueprint 생성 시점에
       # 대시보드에서 직접 입력받는다는 뜻이다. 비밀은 여기 적지 않는다.
-      - key: GEMINI_API_KEY
+      - key: LLM_API_KEY
         sync: false
       - key: APP_PASSWORD
         sync: false
-      # 모델을 바꾸고 싶으면 대시보드에서 이 값만 고치면 된다.
-      - key: GEMINI_MODEL
-        value: gemini-2.5-flash
+      # 공급자와 모델은 값이 비밀이 아니므로 여기 적어 둔다. 갈아끼울 때는
+      # 대시보드에서 이 둘만 고치면 되고 코드는 건드릴 필요가 없다.
+      #   NVIDIA  https://integrate.api.nvidia.com/v1
+      #   Gemini  https://generativelanguage.googleapis.com/v1beta/openai/
+      - key: LLM_BASE_URL
+        value: https://integrate.api.nvidia.com/v1
+      - key: LLM_MODEL
+        value: nvidia/nemotron-3-super-120b-a12b

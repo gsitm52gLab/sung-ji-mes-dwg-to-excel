@@ -4,11 +4,18 @@
 대화 이력은 클라이언트가 들고 있고 서버는 무상태다. HF Space 는 재시작하면
 디스크가 날아가므로 서버에 상태를 두지 않는 편이 맞다.
 
+LLM 은 OpenAI 호환 엔드포인트면 무엇이든 붙는다. NVIDIA NIM, Gemini 의 OpenAI
+호환 경로, OpenAI 본체가 모두 같은 코드로 돌아간다. 공급자를 바꾸는 일이 코드
+수정이 아니라 환경변수 세 개를 고치는 일이어야 배포처에서 갈아끼울 수 있다.
+
 환경변수:
-    GEMINI_API_KEY  (필수) Gemini API 키
-    APP_PASSWORD    (필수) 접속 비밀번호
-    GEMINI_MODEL    (선택) 기본 gemini-2.5-flash
-    PORT            (선택) 기본 7860 — HF Spaces 기본 포트
+    LLM_API_KEY   (필수) 공급자 API 키
+    LLM_BASE_URL  (필수) OpenAI 호환 엔드포인트
+                  NVIDIA  https://integrate.api.nvidia.com/v1
+                  Gemini  https://generativelanguage.googleapis.com/v1beta/openai/
+    LLM_MODEL     (필수) 모델 식별자
+    APP_PASSWORD  (필수) 접속 비밀번호
+    PORT          (선택) 기본 7860 — HF Spaces 기본 포트
 """
 
 from __future__ import annotations
@@ -29,13 +36,13 @@ from context import build_system_prompt
 HERE = Path(__file__).resolve().parent
 DATA_CSV = HERE / "data" / "구역별_대조.csv"
 
-DEFAULT_MODEL = "gemini-2.5-flash"
 SESSION_COOKIE = "deckchat_session"
 
 # 한 요청에 실어 보낼 수 있는 대화 이력의 상한. 무한정 늘어난 이력이
 # 그대로 과금으로 이어지는 것을 막는다.
 MAX_MESSAGES = 40
 MAX_CHARS_PER_MESSAGE = 4000
+MAX_OUTPUT_TOKENS = 1500
 
 
 def _require_env(name: str, hint: str) -> str:
@@ -46,14 +53,21 @@ def _require_env(name: str, hint: str) -> str:
 
 
 API_KEY = _require_env(
-    "GEMINI_API_KEY",
-    "HF Space 는 Settings > Variables and secrets 에, 로컬은 셸에서 export 하세요.",
+    "LLM_API_KEY",
+    "Render 는 서비스의 Environment 탭에, 로컬은 셸에서 export 하세요.",
+)
+BASE_URL = _require_env(
+    "LLM_BASE_URL",
+    "OpenAI 호환 엔드포인트입니다. 예: https://integrate.api.nvidia.com/v1",
+)
+MODEL = _require_env(
+    "LLM_MODEL",
+    "모델 식별자입니다. 예: nvidia/nemotron-3-super-120b-a12b",
 )
 APP_PASSWORD = _require_env(
     "APP_PASSWORD",
     "접속 비밀번호입니다. 데이터가 실제 고객 도면이라 인증 없이 띄우지 않습니다.",
 )
-MODEL = os.environ.get("GEMINI_MODEL", "").strip() or DEFAULT_MODEL
 
 SYSTEM_PROMPT, DATA_META = build_system_prompt(DATA_CSV)
 
@@ -78,17 +92,17 @@ def _authed(token: str | None) -> bool:
 
 app = FastAPI(title="데크 발주 검증 채팅")
 
-# google-genai 클라이언트는 첫 요청 때 만든다. 기동만 시키고 네트워크가
-# 없는 환경(빌드 단계 등)에서도 서버가 뜨게 하려는 것이다.
+# 클라이언트는 첫 요청 때 만든다. 기동만 시키고 네트워크가 없는 환경
+# (빌드 단계 등)에서도 서버가 뜨게 하려는 것이다.
 _client = None
 
 
-def _gemini_client():
+def _llm_client():
     global _client
     if _client is None:
-        from google import genai
+        from openai import OpenAI
 
-        _client = genai.Client(api_key=API_KEY)
+        _client = OpenAI(api_key=API_KEY, base_url=BASE_URL, timeout=120.0)
     return _client
 
 
@@ -96,40 +110,34 @@ def _sse(event: str, payload: dict) -> str:
     return f"event: {event}\ndata: {json.dumps(payload, ensure_ascii=False)}\n\n"
 
 
-def _to_contents(messages: list[dict]):
-    """채팅 이력을 google-genai 의 Content 목록으로 바꾼다."""
-    from google.genai import types
-
-    contents = []
+def _to_messages(messages: list[dict]) -> list[dict]:
+    """채팅 이력을 OpenAI 형식 메시지 목록으로 바꾼다. 맨 앞에 시스템 프롬프트."""
+    out = [{"role": "system", "content": SYSTEM_PROMPT}]
     for message in messages:
         text = (message.get("content") or "").strip()
         if not text:
             continue
-        # Gemini 는 assistant 를 'model' 로 부른다.
-        role = "model" if message.get("role") == "assistant" else "user"
-        contents.append(
-            types.Content(role=role, parts=[types.Part(text=text[:MAX_CHARS_PER_MESSAGE])])
-        )
-    return contents
+        role = "assistant" if message.get("role") == "assistant" else "user"
+        out.append({"role": role, "content": text[:MAX_CHARS_PER_MESSAGE]})
+    return out
 
 
 def _stream_reply(messages: list[dict]) -> Iterator[str]:
-    from google.genai import types
-
     try:
-        config = types.GenerateContentConfig(
-            system_instruction=SYSTEM_PROMPT,
-            # 도구를 붙이지 않았으므로 자동 함수 호출을 꺼 경고를 없앤다.
-            automatic_function_calling=types.AutomaticFunctionCallingConfig(
-                disable=True
-            ),
-        )
-        stream = _gemini_client().models.generate_content_stream(
-            model=MODEL, contents=_to_contents(messages), config=config
+        stream = _llm_client().chat.completions.create(
+            model=MODEL,
+            messages=_to_messages(messages),
+            stream=True,
+            max_tokens=MAX_OUTPUT_TOKENS,
         )
         sent_any = False
         for chunk in stream:
-            text = getattr(chunk, "text", None)
+            if not chunk.choices:
+                continue
+            delta = chunk.choices[0].delta
+            # 추론형 모델은 사고 과정을 reasoning_content 로 따로 낸다.
+            # 그건 사용자에게 보여줄 것이 아니므로 content 만 흘린다.
+            text = getattr(delta, "content", None)
             if text:
                 sent_any = True
                 yield _sse("token", {"text": text})
@@ -168,7 +176,9 @@ async def meta(deckchat_session: str | None = Cookie(default=None)):
     """로그인 여부와 대조 데이터 요약. 첫 화면을 그리는 데 쓴다."""
     if not _authed(deckchat_session):
         return {"authed": False}
-    return {"authed": True, "model": MODEL, "data": DATA_META}
+    # BASE_URL 의 호스트만 싣는다. 키는 어떤 경우에도 내보내지 않는다.
+    host = BASE_URL.split("//")[-1].split("/")[0]
+    return {"authed": True, "model": MODEL, "provider": host, "data": DATA_META}
 
 
 @app.post("/api/chat")

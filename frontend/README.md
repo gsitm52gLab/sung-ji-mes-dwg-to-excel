@@ -11,7 +11,11 @@ pinned: false
 # 데크 발주 검증 채팅
 
 도면(SHOP·DETAIL)에서 뽑은 부재 사양과 발주 엑셀 `일람표` 시트를 셀 단위로
-대조한 결과를 놓고 Gemini 와 대화하는 화면이다.
+대조한 결과를 놓고 LLM 과 대화하는 화면이다.
+
+LLM 은 **OpenAI 호환 엔드포인트면 무엇이든** 붙는다. NVIDIA NIM, Gemini 의
+OpenAI 호환 경로, OpenAI 본체가 모두 같은 코드로 돌아간다. 공급자를 바꾸는 일은
+코드 수정이 아니라 환경변수 두 개(`LLM_BASE_URL`, `LLM_MODEL`)를 고치는 일이다.
 
 설계 문서: `docs/superpowers/specs/2026-09-17-frontend-chat-llm-design.md`
 
@@ -29,15 +33,32 @@ pinned: false
 
 | 이름 | 필수 | 설명 |
 |---|---|---|
-| `GEMINI_API_KEY` | ✅ | Gemini API 키. HF 에서는 Settings > Variables and secrets 에 **Secret** 으로 |
+| `LLM_API_KEY` | ✅ | 공급자 API 키. Render 는 서비스의 Environment 탭에 넣는다 |
+| `LLM_BASE_URL` | ✅ | OpenAI 호환 엔드포인트 (아래 표 참조) |
+| `LLM_MODEL` | ✅ | 모델 식별자 |
 | `APP_PASSWORD` | ✅ | 접속 비밀번호. 실제 고객 도면 데이터라 인증 없이 띄우지 않는다 |
-| `GEMINI_MODEL` | | 기본 `gemini-2.5-flash` |
+
+### 공급자별 설정
+
+| 공급자 | `LLM_BASE_URL` | `LLM_MODEL` 예 |
+|---|---|---|
+| NVIDIA NIM | `https://integrate.api.nvidia.com/v1` | `nvidia/nemotron-3-super-120b-a12b` |
+| Gemini | `https://generativelanguage.googleapis.com/v1beta/openai/` | `gemini-2.5-flash` |
+| OpenAI | `https://api.openai.com/v1` | `gpt-4o-mini` |
+
+사용 가능한 모델 목록은 엔드포인트의 `/models` 로 확인한다.
+
+```bash
+curl -s $LLM_BASE_URL/models -H "Authorization: Bearer $LLM_API_KEY"
+```
 
 ## 로컬 실행
 
 ```bash
 pip install -r frontend/requirements.txt
-export GEMINI_API_KEY=...
+export LLM_API_KEY=...
+export LLM_BASE_URL=https://integrate.api.nvidia.com/v1
+export LLM_MODEL=nvidia/nemotron-3-super-120b-a12b
 export APP_PASSWORD=...
 cd frontend && uvicorn server:app --reload --port 7860
 ```
@@ -53,17 +74,23 @@ cd frontend && uvicorn server:app --reload --port 7860
 python3 frontend/refresh_data.py
 ```
 
-## 배포 (Hugging Face Spaces)
+## 배포 (Render)
 
-`frontend/` 가 곧 Space 루트다. subtree 로 밀어 넣는다.
+리포지토리 루트의 `render.yaml` 이 Blueprint 다. Render 에서 리포를 연결하면
+그대로 서비스가 만들어지고, `sync:false` 로 표시한 비밀은 대시보드에서 직접
+입력받는다. 빌드 컨텍스트를 `frontend/` 로 좁혀 두어 도면 dxf 와 발주 엑셀은
+이미지에 들어가지 않는다.
 
-```bash
-git remote add hf https://huggingface.co/spaces/<계정>/<스페이스명>
-git subtree push --prefix=frontend hf main
+```
+https://render.com/deploy?repo=https://github.com/gsitm52gLab/sung-ji-mes-dwg-to-excel
 ```
 
-Space 는 **Private** 으로 만든다. 데이터가 실제 고객(대우건설 식사푸르지오)
-도면이기 때문이다. 앱 비밀번호는 그 위에 한 겹 더 두는 것이다.
+무료 플랜은 15분 비활동 시 슬립되고 깨어나는 데 약 1분 걸린다. 시연 전에 URL 을
+한 번 열어 미리 깨워 두어야 한다. 월 750시간 한도가 있어 상시 운영용은 아니다.
+
+`Dockerfile` 은 `PORT` 환경변수를 받는다. Render 는 `PORT` 를 주입하고(기본
+10000) 그 포트에 `0.0.0.0` 으로 묶이지 않으면 배포를 실패 처리한다. 기본값을
+7860 으로 두어 HF Spaces 규약도 함께 만족시킨다.
 
 ## 이번 범위 밖
 

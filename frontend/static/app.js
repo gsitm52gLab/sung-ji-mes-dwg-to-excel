@@ -270,7 +270,7 @@ function showLogin(message) {
 function showApp(meta) {
   loginScreen.hidden = true;
   appScreen.hidden = false;
-  $("model-name").textContent = meta.model;
+  $("model-name").textContent = meta.provider ? `${meta.model} · ${meta.provider}` : meta.model;
   chatEl.innerHTML = "";
   renderSummary(meta.data);
   inputEl.focus();
