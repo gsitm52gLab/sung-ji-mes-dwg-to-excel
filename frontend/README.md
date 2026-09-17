@@ -40,11 +40,15 @@ OpenAI 호환 경로, OpenAI 본체가 모두 같은 코드로 돌아간다. 공
 
 ### 공급자별 설정
 
-| 공급자 | `LLM_BASE_URL` | `LLM_MODEL` 예 |
-|---|---|---|
-| NVIDIA NIM | `https://integrate.api.nvidia.com/v1` | `nvidia/nemotron-3-super-120b-a12b` |
-| Gemini | `https://generativelanguage.googleapis.com/v1beta/openai/` | `gemini-2.5-flash` |
-| OpenAI | `https://api.openai.com/v1` | `gpt-4o-mini` |
+| 공급자 | `LLM_BASE_URL` | `LLM_MODEL` 예 | |
+|---|---|---|---|
+| Gemini | `https://generativelanguage.googleapis.com/v1beta/openai/` | `gemini-2.5-flash` | **기본값·검증됨** |
+| NVIDIA NIM | `https://integrate.api.nvidia.com/v1` | 아래 참고 | 미검증 |
+| OpenAI | `https://api.openai.com/v1` | `gpt-4o-mini` | 미검증 |
+
+NVIDIA NIM 은 같은 코드로 붙지만 쓸 모델을 먼저 골라야 한다. 시도한 셋이
+각각 과부하(`Service temporarily overloaded`), 사고 과정이 답변에 새는 문제,
+계정 미지원(404) 이었다.
 
 사용 가능한 모델 목록은 엔드포인트의 `/models` 로 확인한다.
 
@@ -57,8 +61,8 @@ curl -s $LLM_BASE_URL/models -H "Authorization: Bearer $LLM_API_KEY"
 ```bash
 pip install -r frontend/requirements.txt
 export LLM_API_KEY=...
-export LLM_BASE_URL=https://integrate.api.nvidia.com/v1
-export LLM_MODEL=nvidia/nemotron-3-super-120b-a12b
+export LLM_BASE_URL=https://generativelanguage.googleapis.com/v1beta/openai/
+export LLM_MODEL=gemini-2.5-flash
 export APP_PASSWORD=...
 cd frontend && uvicorn server:app --reload --port 7860
 ```
